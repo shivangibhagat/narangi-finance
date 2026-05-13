@@ -1,65 +1,44 @@
-# Narangi Finance — 2026 Monthly Financial Planner
+# Narangi Finance — 2026+ Financial Planner
 
-A full-featured personal finance app built from your Excel plan.
-
-## Features
-- 📊 **Dashboard** — Monthly KPIs, income vs expenses chart, category breakdown, per-person spend
-- ➕ **Transactions** — Add, view, and delete transactions by month
-- 📋 **Financial Plan** — Edit your budget targets (income, fixed expenses, savings goals)
-- 💳 **Credit Cards** — Track outstanding balances and repayment progress for NARR & SHIVU
+Real-time sync across all devices via Firebase.
 
 ---
 
-## Run Locally
+## Step 1 — Set Up Firebase (5 minutes, free)
 
-```bash
-npm install
-npm run dev
-```
-Open http://localhost:5173
+### 1.1 Create project
+1. Go to console.firebase.google.com
+2. Click "Add project" → name it "narangi-finance" → click through
 
----
+### 1.2 Create Firestore database
+1. Click "Firestore Database" in left menu
+2. "Create database" → "Start in test mode" → pick any location → Done
 
-## Deploy to Vercel (Recommended — free)
+### 1.3 Get config keys
+1. Click gear icon → "Project settings"
+2. Scroll to "Your apps" → click the </> Web icon
+3. Register app → copy the firebaseConfig object
 
-### Option A: Vercel CLI
-```bash
-npm install -g vercel
-vercel
-```
-Follow the prompts. Done in ~60 seconds.
-
-### Option B: Vercel Dashboard
-1. Push this folder to a GitHub repo
-2. Go to https://vercel.com/new
-3. Import your repo → Vercel auto-detects Vite → click **Deploy**
+### 1.4 Paste into app
+Open src/firebase.js and replace each PASTE_YOUR_..._HERE with your actual values.
 
 ---
 
-## Deploy to Netlify
+## Step 2 — Deploy
 
-### Option A: Netlify CLI
-```bash
-npm install -g netlify-cli
-netlify deploy --prod
-```
+  npm install
+  npm run build
+  npx vercel --prod
 
-### Option B: Netlify Dashboard
-1. Go to https://app.netlify.com
-2. Drag & drop the `dist/` folder (after running `npm run build`)
-   **or** connect your GitHub repo for auto-deploys
+Visit your Vercel URL on both phones — data syncs instantly.
 
 ---
 
-## Build for Production
-```bash
-npm run build
-# Output in /dist — upload anywhere (S3, GitHub Pages, etc.)
-```
+## Add to Home Screen
+- iPhone: Safari → Share → "Add to Home Screen"
+- Android: Chrome → 3-dot menu → "Add to Home Screen"
 
 ---
 
-## Tech Stack
-- React 18 + Vite
-- Recharts (charts)
-- Zero external UI libraries — all custom styled
+## Re-deploy after any code changes
+  npx vercel --prod

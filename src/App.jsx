@@ -1,5 +1,9 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { db } from "./firebase";
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
+
+const FIRESTORE_DOC = doc(db, "narangi-finance", "shared-data");
 
 const T = {
   bg:"#0A0E1A", surface:"#111827", card:"#1A2236", border:"#1E2D45",
@@ -10,8 +14,10 @@ const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov
 const fmt = n => "₹" + Number(n||0).toLocaleString("en-IN");
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,5);
 const mNum = m => String(MONTHS.indexOf(m)+1).padStart(2,"0");
-const CAT_CLR = { INCOME:T.accent, "FIXED EXPENSES":T.blue, "VARIABLE EXPENSES":T.amber, SAVINGS:T.purple, "CC PAYMENT":T.rose };
+const monthKey = (y,m) => `${y}-${mNum(m)}`; // e.g. "2026-05"
+const CAT_CLR = { INCOME:T.accent,"FIXED EXPENSES":T.blue,"VARIABLE EXPENSES":T.amber,SAVINGS:T.purple,"CC PAYMENT":T.rose };
 const PIE_COLORS = [T.accent,T.blue,T.amber,T.purple,T.rose,"#34D399","#818CF8","#FB923C"];
+const YEARS = [2025,2026,2027,2028,2029,2030];
 
 const DEFAULTS = {
   members: ["NARR","SHIVU"],
@@ -39,7 +45,11 @@ const DEFAULTS = {
     {id:"cc1",name:"NARR Credit Card",person:"NARR",outstanding:94572,limit:150000},
     {id:"cc2",name:"SHIVU Credit Card",person:"SHIVU",outstanding:67606,limit:150000}
   ],
-  customTags: ["reimbursable","birthday","travel","emergency","work"]
+  customTags: ["reimbursable","birthday","travel","emergency","work"],
+  // Opening balances keyed by "YYYY-MM" → { NARR: 0, SHIVU: 0, note: "" }
+  openingBalances: {
+    "2026-05": { NARR: 0, SHIVU: 0, note: "First month tracked" }
+  }
 };
 
 const SEED = [
@@ -78,16 +88,14 @@ const SEED = [
   {id:"t33",date:"2026-05-07",category:"FIXED EXPENSES",subCat:"Misc",spentOn:"Water and soda in Surat",amount:168,person:"NARR",note:"",tags:[]}
 ];
 
-function loadState() {
-  try { const s = localStorage.getItem("narangi_v3"); return s ? JSON.parse(s) : null; } catch { return null; }
-}
+// Firebase sync — no local function needed
 
 // ─── UI Primitives ─────────────────────────────────────────────────────────────
 const Card = ({children,style={}}) => (
   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:"20px 24px",...style}}>{children}</div>
 );
 const Btn = ({children,onClick,color=T.accent,variant="solid",small,style={}}) => (
-  <button onClick={onClick} style={{background:variant==="solid"?color:"transparent",color:variant==="solid"?T.bg:color,border:`1px solid ${color}`,borderRadius:8,padding:small?"5px 12px":"9px 18px",fontSize:small?11:13,fontWeight:700,cursor:"pointer",transition:"all 0.15s",...style}}>{children}</button>
+  <button onClick={onClick} style={{background:variant==="solid"?color:"transparent",color:variant==="solid"?T.bg:color,border:`1px solid ${color}`,borderRadius:8,padding:small?"5px 12px":"9px 18px",fontSize:small?11:13,fontWeight:700,cursor:"pointer",...style}}>{children}</button>
 );
 const TextInput = ({label,value,onChange,type="text",placeholder=""}) => (
   <div style={{display:"flex",flexDirection:"column",gap:5}}>
@@ -131,14 +139,14 @@ const Delta = ({curr,prev}) => {
 
 function TxnForm({state,value,onChange,onSubmit,submitLabel="Add Transaction"}) {
   const subCatMap = {
-    INCOME: state.income.map(i=>i.label),
-    "FIXED EXPENSES": state.fixedExpenses.map(f=>f.label),
-    "VARIABLE EXPENSES": state.variableSubCats,
-    SAVINGS: state.savings.map(s=>s.label),
-    "CC PAYMENT": state.creditCards.map(c=>c.name),
+    INCOME:state.income.map(i=>i.label),
+    "FIXED EXPENSES":state.fixedExpenses.map(f=>f.label),
+    "VARIABLE EXPENSES":state.variableSubCats,
+    SAVINGS:state.savings.map(s=>s.label),
+    "CC PAYMENT":state.creditCards.map(c=>c.name),
   };
-  const subCats = subCatMap[value.category]||[];
-  const upd = patch => onChange({...value,...patch});
+  const subCats=subCatMap[value.category]||[];
+  const upd=patch=>onChange({...value,...patch});
   return (
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -171,18 +179,130 @@ function TxnForm({state,value,onChange,onSubmit,submitLabel="Add Transaction"}) 
   );
 }
 
+// ─── Opening Balance Editor ────────────────────────────────────────────────────
+function OpeningBalanceCard({state, upd, activeYear, activeMonth}) {
+  const key = monthKey(activeYear, activeMonth);
+  const bal = state.openingBalances?.[key] || { NARR:0, SHIVU:0, note:"" };
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(bal);
+
+  useEffect(()=>{
+    const b=state.openingBalances?.[key]||{NARR:0,SHIVU:0,note:""};
+    setDraft(b);
+    setEditing(false);
+  },[key]);
+
+  const combined = (bal.NARR||0)+(bal.SHIVU||0);
+  const save = () => {
+    upd({openingBalances:{...state.openingBalances,[key]:{NARR:+draft.NARR||0,SHIVU:+draft.SHIVU||0,note:draft.note||""}}});
+    setEditing(false);
+  };
+
+  return (
+    <Card style={{background:`linear-gradient(135deg,#1a2236,#1e2a3a)`,border:`1px solid ${T.accent}33`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+        <div>
+          <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>🏦 Opening Bank Balance</div>
+          <div style={{fontSize:10,color:T.muted}}>{activeMonth} {activeYear} · Start of month</div>
+        </div>
+        {!editing&&<Btn small variant="outline" color={T.accent} onClick={()=>{setDraft(bal);setEditing(true);}}>Edit</Btn>}
+      </div>
+
+      {editing ? (
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {state.members.map(m=>(
+            <div key={m} style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:13,fontWeight:600,color:m===state.members[0]?T.accent:T.purple,width:60,flexShrink:0}}>{m}</span>
+              <div style={{display:"flex",alignItems:"center",gap:6,flex:1}}>
+                <span style={{color:T.muted,fontSize:13}}>₹</span>
+                <input type="number" value={draft[m]||""} onChange={e=>setDraft(d=>({...d,[m]:e.target.value}))}
+                  placeholder="0" style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"8px 10px",fontSize:14,fontWeight:700,outline:"none"}}/>
+              </div>
+            </div>
+          ))}
+          <input value={draft.note||""} onChange={e=>setDraft(d=>({...d,note:e.target.value}))}
+            placeholder="Note (e.g. SHIVU salary expected on 8th)" style={{background:T.surface,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"8px 10px",fontSize:12,outline:"none"}}/>
+          <div style={{display:"flex",gap:8}}>
+            <Btn small onClick={save}>Save</Btn>
+            <Btn small variant="outline" color={T.muted} onClick={()=>setEditing(false)}>Cancel</Btn>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div style={{display:"flex",gap:16,marginBottom:10}}>
+            {state.members.map((m,i)=>(
+              <div key={m} style={{flex:1,padding:"10px 14px",background:T.surface,borderRadius:10,border:`1px solid ${[T.accent,T.purple][i%2]}33`}}>
+                <div style={{fontSize:11,color:[T.accent,T.purple][i%2],fontWeight:700,marginBottom:4}}>{m}</div>
+                <div style={{fontSize:20,fontWeight:800,color:T.text}}>{fmt(bal[m]||0)}</div>
+              </div>
+            ))}
+            <div style={{flex:1,padding:"10px 14px",background:T.surface,borderRadius:10,border:`1px solid ${T.green}33`}}>
+              <div style={{fontSize:11,color:T.green,fontWeight:700,marginBottom:4}}>COMBINED</div>
+              <div style={{fontSize:20,fontWeight:800,color:T.green}}>{fmt(combined)}</div>
+            </div>
+          </div>
+          {bal.note&&<div style={{fontSize:12,color:T.muted,fontStyle:"italic"}}>📝 {bal.note}</div>}
+          {!bal.note&&!combined&&<div style={{fontSize:12,color:T.muted}}>Tap Edit to set opening balances for {activeMonth}</div>}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ─── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
-  const [s, setS] = useState(()=>loadState()||{...DEFAULTS,transactions:SEED});
-  useEffect(()=>{ localStorage.setItem("narangi_v3",JSON.stringify(s)); },[s]);
-  const upd = patch => setS(prev=>({...prev,...patch}));
+  const [s, setS] = useState({...DEFAULTS, transactions: SEED});
+  const [syncStatus, setSyncStatus] = useState("connecting"); // connecting | live | saving | error
+  const isRemoteUpdate = useRef(false);
+  const saveTimer = useRef(null);
+
+  // ── Subscribe to Firestore (real-time across all devices) ──
+  useEffect(() => {
+    setSyncStatus("connecting");
+    const unsub = onSnapshot(
+      FIRESTORE_DOC,
+      (snap) => {
+        if (snap.exists()) {
+          isRemoteUpdate.current = true;
+          setS(snap.data());
+        } else {
+          // First time — seed with defaults
+          setDoc(FIRESTORE_DOC, {...DEFAULTS, transactions: SEED});
+        }
+        setSyncStatus("live");
+      },
+      () => setSyncStatus("error")
+    );
+    return unsub;
+  }, []);
+
+  // ── Save to Firestore on local changes (debounced 800ms) ──
+  useEffect(() => {
+    if (isRemoteUpdate.current) { isRemoteUpdate.current = false; return; }
+    if (syncStatus === "connecting") return;
+    clearTimeout(saveTimer.current);
+    setSyncStatus("saving");
+    saveTimer.current = setTimeout(() => {
+      setDoc(FIRESTORE_DOC, s)
+        .then(() => setSyncStatus("live"))
+        .catch(() => setSyncStatus("error"));
+    }, 800);
+  }, [s]);
+
+  const upd = patch => setS(prev => ({...prev, ...patch}));
 
   const [tab, setTab] = useState("dashboard");
+  const [activeYear, setActiveYear] = useState(2026);
   const [activeMonth, setActiveMonth] = useState("May");
   const [showQuickAdd, setShowQuickAdd] = useState(false);
-  const [quickForm, setQuickForm] = useState({date:"2026-05-13",category:"VARIABLE EXPENSES",subCat:"CAFES/RESTAURANTS",spentOn:"",amount:"",person:"NARR",note:"",tags:[],ccId:undefined});
+  const [quickForm, setQuickForm] = useState({
+    date:`${activeYear}-${mNum(activeMonth)}-01`,
+    category:"VARIABLE EXPENSES",subCat:"CAFES/RESTAURANTS",
+    spentOn:"",amount:"",person:"NARR",note:"",tags:[],ccId:undefined
+  });
 
-  const getTxns = m => s.transactions.filter(t=>t.date.startsWith(`2026-${mNum(m)}`));
+  // Year-aware transaction helpers
+  const getTxns = (m, y=activeYear) => s.transactions.filter(t=>t.date.startsWith(`${y}-${mNum(m)}`));
   const summarize = txns => ({
     income:txns.filter(t=>t.category==="INCOME").reduce((a,t)=>a+t.amount,0),
     fixed:txns.filter(t=>t.category==="FIXED EXPENSES").reduce((a,t)=>a+t.amount,0),
@@ -191,10 +311,23 @@ export default function App() {
     ccPaid:txns.filter(t=>t.category==="CC PAYMENT").reduce((a,t)=>a+t.amount,0),
   });
 
-  const monthTxns = useMemo(()=>getTxns(activeMonth),[s.transactions,activeMonth]);
+  const monthTxns = useMemo(()=>getTxns(activeMonth,activeYear),[s.transactions,activeMonth,activeYear]);
   const summary = useMemo(()=>summarize(monthTxns),[monthTxns]);
   const prevIdx = MONTHS.indexOf(activeMonth)-1;
-  const prevSummary = useMemo(()=>summarize(prevIdx>=0?getTxns(MONTHS[prevIdx]):[]),[s.transactions,activeMonth]);
+  const prevSummary = useMemo(()=>{
+    const prevM = prevIdx>=0?MONTHS[prevIdx]:null;
+    const prevY = prevIdx<0?activeYear-1:activeYear;
+    const prevMon = prevIdx<0?"Dec":prevM;
+    return summarize(getTxns(prevMon,prevY));
+  },[s.transactions,activeMonth,activeYear]);
+
+  // Opening balance for this month
+  const key = monthKey(activeYear, activeMonth);
+  const openBal = s.openingBalances?.[key]||{NARR:0,SHIVU:0,note:""};
+  const openingCombined = (openBal.NARR||0)+(openBal.SHIVU||0);
+
+  // Projected balance = opening + income so far - expenses so far
+  const projectedBalance = openingCombined + summary.income - summary.fixed - summary.variable - summary.ccPaid;
 
   const totalIncome = s.income.reduce((a,i)=>a+i.amount,0);
   const totalFixed = s.fixedExpenses.reduce((a,f)=>a+f.budget,0);
@@ -208,10 +341,12 @@ export default function App() {
   };
   const delTxn = id => upd({transactions:s.transactions.filter(t=>t.id!==id)});
 
+  // Annual chart for selected year
   const annualData = useMemo(()=>MONTHS.map(m=>{
-    const t=summarize(getTxns(m));
-    return {month:m,income:t.income,expenses:t.fixed+t.variable,savings:t.savings};
-  }),[s.transactions]);
+    const t=summarize(getTxns(m,activeYear));
+    const ob=s.openingBalances?.[monthKey(activeYear,m)]||{NARR:0,SHIVU:0};
+    return {month:m,income:t.income,expenses:t.fixed+t.variable,savings:t.savings,opening:(ob.NARR||0)+(ob.SHIVU||0)};
+  }),[s.transactions,s.openingBalances,activeYear]);
 
   const catBreakdown = useMemo(()=>{
     const grp={};
@@ -219,19 +354,41 @@ export default function App() {
     return Object.entries(grp).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value}));
   },[monthTxns]);
 
+  // Years that have transaction data
+  const yearsWithData = useMemo(()=>{
+    const ys=new Set(s.transactions.map(t=>parseInt(t.date.slice(0,4))));
+    YEARS.forEach(y=>ys.add(y));
+    return [...ys].sort();
+  },[s.transactions]);
+
   const TABS = ["dashboard","transactions","plan","credit cards"];
 
   return (
     <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'DM Sans','Segoe UI',sans-serif",paddingBottom:80}}>
+      {/* Header */}
       <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"0 28px",position:"sticky",top:0,zIndex:100}}>
-        <div style={{maxWidth:1280,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between",height:64}}>
-          <div style={{display:"flex",alignItems:"center",gap:12}}>
+        <div style={{maxWidth:1280,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between",height:64,gap:16}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
             <div style={{width:36,height:36,borderRadius:10,background:`linear-gradient(135deg,${T.accent},${T.purple})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🪙</div>
             <div>
               <div style={{fontWeight:800,fontSize:16,letterSpacing:"-0.02em"}}>Narangi Finance</div>
-              <div style={{color:T.muted,fontSize:11}}>2026 · {activeMonth}</div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:6,height:6,borderRadius:"50%",background:syncStatus==="live"?T.green:syncStatus==="saving"?T.amber:T.rose}}/><span style={{color:T.muted,fontSize:11}}>{syncStatus==="live"?"Synced":syncStatus==="saving"?"Saving...":syncStatus==="connecting"?"Connecting...":"Sync error"} · {activeMonth} {activeYear}</span></div>
             </div>
           </div>
+
+          {/* Year Switcher */}
+          <div style={{display:"flex",alignItems:"center",gap:6,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"4px 6px"}}>
+            <span style={{fontSize:11,color:T.muted,fontWeight:700,paddingLeft:6}}>YEAR</span>
+            {yearsWithData.map(y=>(
+              <button key={y} onClick={()=>setActiveYear(y)} style={{
+                background:activeYear===y?T.accent:"transparent",
+                color:activeYear===y?T.bg:T.muted,
+                border:`1px solid ${activeYear===y?T.accent:"transparent"}`,
+                borderRadius:7,padding:"4px 12px",fontSize:12,fontWeight:700,cursor:"pointer"
+              }}>{y}</button>
+            ))}
+          </div>
+
           <div style={{display:"flex",gap:6}}>
             {TABS.map(t=>(
               <button key={t} onClick={()=>setTab(t)} style={{background:tab===t?T.accent:"transparent",color:tab===t?T.bg:T.muted,border:`1px solid ${tab===t?T.accent:T.border}`,borderRadius:8,padding:"7px 16px",fontSize:13,fontWeight:700,cursor:"pointer"}}>
@@ -244,13 +401,23 @@ export default function App() {
 
       <div style={{maxWidth:1280,margin:"0 auto",padding:"24px 28px"}}>
 
+        {/* ══ DASHBOARD ══════════════════════════════════════════════════════════ */}
         {tab==="dashboard"&&(
           <div>
-            <div style={{display:"flex",gap:6,marginBottom:20,flexWrap:"wrap"}}>
-              {MONTHS.map(m=>{const has=getTxns(m).length>0;return(
+            {/* Month Selector */}
+            <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+              <span style={{fontSize:11,color:T.muted,fontWeight:700,marginRight:4}}>{activeYear}</span>
+              {MONTHS.map(m=>{const has=getTxns(m,activeYear).length>0;return(
                 <button key={m} onClick={()=>setActiveMonth(m)} style={{background:activeMonth===m?T.accent:has?T.accentDim:"transparent",color:activeMonth===m?T.bg:has?T.accent:T.muted,border:`1px solid ${activeMonth===m?T.accent:has?T.accent+"55":T.border}`,borderRadius:7,padding:"5px 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{m}</button>
               );})}
             </div>
+
+            {/* Opening Balance Card — full width */}
+            <div style={{marginBottom:16}}>
+              <OpeningBalanceCard state={s} upd={upd} activeYear={activeYear} activeMonth={activeMonth}/>
+            </div>
+
+            {/* Budget Alert */}
             {summary.variable>0&&(
               <div style={{background:varStatus+"15",border:`1px solid ${varStatus}44`,borderRadius:12,padding:"10px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:12}}>
                 <div style={{width:8,height:8,borderRadius:"50%",background:varStatus,flexShrink:0}}/>
@@ -260,35 +427,46 @@ export default function App() {
                 </span>
               </div>
             )}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:20}}>
+
+            {/* KPI Cards — now includes projected balance */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:20}}>
               {[
+                {label:"Opening Balance",val:openingCombined,prev:null,color:T.blue,icon:"🏦"},
                 {label:"Income",val:summary.income,prev:prevSummary.income,color:T.accent,icon:"↑"},
                 {label:"Fixed Spend",val:summary.fixed,prev:prevSummary.fixed,color:T.blue,icon:"🔒"},
                 {label:"Variable Spend",val:summary.variable,prev:prevSummary.variable,color:varStatus,icon:"📊"},
-                {label:"Balance",val:summary.income-summary.fixed-summary.variable-summary.savings-summary.ccPaid,prev:prevSummary.income-prevSummary.fixed-prevSummary.variable,color:T.green,icon:"="},
+                {label:"Current Balance",val:projectedBalance,prev:null,color:projectedBalance>=0?T.green:T.rose,icon:"💰"},
               ].map(k=>(
-                <Card key={k.label}>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
-                    <span style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>{k.label}</span>
-                    <span style={{fontSize:16}}>{k.icon}</span>
+                <Card key={k.label} style={{padding:"16px 18px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+                    <span style={{fontSize:10,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>{k.label}</span>
+                    <span style={{fontSize:14}}>{k.icon}</span>
                   </div>
-                  <div style={{fontSize:24,fontWeight:800,color:k.color,letterSpacing:"-0.03em"}}>{fmt(k.val)}</div>
-                  <div style={{marginTop:6,display:"flex",alignItems:"center"}}>
-                    <span style={{fontSize:11,color:T.muted}}>{prevIdx>=0?`vs ${MONTHS[prevIdx]}`:"first month"}</span>
-                    <Delta curr={k.val} prev={k.prev}/>
-                  </div>
+                  <div style={{fontSize:20,fontWeight:800,color:k.color,letterSpacing:"-0.02em"}}>{fmt(k.val)}</div>
+                  {k.prev!=null&&(
+                    <div style={{marginTop:4,display:"flex",alignItems:"center"}}>
+                      <span style={{fontSize:10,color:T.muted}}>vs {prevIdx>=0?MONTHS[prevIdx]:MONTHS[11]}</span>
+                      <Delta curr={k.val} prev={k.prev}/>
+                    </div>
+                  )}
+                  {k.label==="Current Balance"&&openingCombined>0&&(
+                    <div style={{fontSize:10,color:T.muted,marginTop:4}}>Opening + Income − Expenses</div>
+                  )}
                 </Card>
               ))}
             </div>
+
+            {/* Charts */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
               <Card>
-                <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>Annual Overview</div>
+                <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>{activeYear} — Annual Overview</div>
                 <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={annualData} barSize={12}>
+                  <BarChart data={annualData} barSize={10}>
                     <CartesianGrid strokeDasharray="3 3" stroke={T.border}/>
                     <XAxis dataKey="month" stroke={T.muted} tick={{fontSize:10}}/>
                     <YAxis stroke={T.muted} tick={{fontSize:10}} tickFormatter={v=>`₹${(v/1000).toFixed(0)}k`}/>
                     <Tooltip formatter={v=>fmt(v)} contentStyle={{background:T.card,border:`1px solid ${T.border}`,borderRadius:10,color:T.text}}/>
+                    <Bar dataKey="opening" fill={T.blue} radius={[3,3,0,0]} name="Opening Bal"/>
                     <Bar dataKey="income" fill={T.accent} radius={[3,3,0,0]} name="Income"/>
                     <Bar dataKey="expenses" fill={T.amber} radius={[3,3,0,0]} name="Expenses"/>
                     <Bar dataKey="savings" fill={T.purple} radius={[3,3,0,0]} name="Savings"/>
@@ -296,7 +474,7 @@ export default function App() {
                 </ResponsiveContainer>
               </Card>
               <Card>
-                <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>Spend by Category — {activeMonth}</div>
+                <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>Spend by Category — {activeMonth} {activeYear}</div>
                 {catBreakdown.length===0?<div style={{color:T.muted,textAlign:"center",paddingTop:60}}>No data yet</div>:(
                   <div style={{display:"flex",flexDirection:"column",gap:10,maxHeight:200,overflowY:"auto"}}>
                     {catBreakdown.map((c,i)=>(
@@ -304,8 +482,8 @@ export default function App() {
                         <div style={{width:8,height:8,borderRadius:"50%",background:PIE_COLORS[i%PIE_COLORS.length],flexShrink:0}}/>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                            <span style={{fontSize:12,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
-                            <span style={{fontSize:12,fontWeight:700,color:PIE_COLORS[i%PIE_COLORS.length],flexShrink:0,marginLeft:8}}>{fmt(c.value)}</span>
+                            <span style={{fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
+                            <span style={{fontSize:12,fontWeight:700,color:PIE_COLORS[i%PIE_COLORS.length],marginLeft:8,flexShrink:0}}>{fmt(c.value)}</span>
                           </div>
                           <div style={{height:3,background:T.border,borderRadius:99}}>
                             <div style={{height:"100%",width:`${Math.min(100,(c.value/catBreakdown[0].value)*100)}%`,background:PIE_COLORS[i%PIE_COLORS.length],borderRadius:99}}/>
@@ -317,22 +495,27 @@ export default function App() {
                 )}
               </Card>
             </div>
+
+            {/* Per-person */}
             <Card>
-              <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>Spend by Person — {activeMonth}</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:16}}>
+              <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>Spend by Person — {activeMonth} {activeYear}</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:16}}>
                 {s.members.map((m,i)=>{
                   const spent=monthTxns.filter(t=>t.person===m&&t.category!=="INCOME"&&t.category!=="CC PAYMENT").reduce((a,t)=>a+t.amount,0);
                   const earned=monthTxns.filter(t=>t.person===m&&t.category==="INCOME").reduce((a,t)=>a+t.amount,0);
+                  const personOpening=openBal[m]||0;
                   const clr=[T.accent,T.purple][i%2];
                   return(
                     <div key={m} style={{padding:16,background:T.surface,borderRadius:12,border:`1px solid ${T.border}`}}>
                       <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
-                        <span style={{fontWeight:700,color:clr}}>{m}</span>
+                        <span style={{fontWeight:700,color:clr,fontSize:15}}>{m}</span>
                         <Badge color={clr}>{fmt(spent)} spent</Badge>
                       </div>
-                      <div style={{fontSize:12,color:T.muted}}>Earned: <span style={{color:T.accent,fontWeight:600}}>{fmt(earned)}</span></div>
+                      {personOpening>0&&<div style={{fontSize:12,color:T.muted,marginBottom:4}}>Opening: <span style={{color:T.blue,fontWeight:600}}>{fmt(personOpening)}</span></div>}
+                      <div style={{fontSize:12,color:T.muted,marginBottom:4}}>Earned: <span style={{color:T.accent,fontWeight:600}}>{fmt(earned)}</span></div>
+                      <div style={{fontSize:12,color:T.muted}}>Balance: <span style={{color:personOpening+earned-spent>=0?T.green:T.rose,fontWeight:700}}>{fmt(personOpening+earned-spent)}</span></div>
                       <div style={{marginTop:10,height:4,background:T.border,borderRadius:99}}>
-                        <div style={{height:"100%",width:earned>0?`${Math.min(100,(spent/earned)*100)}%`:"0%",background:clr,borderRadius:99}}/>
+                        <div style={{height:"100%",width:personOpening+earned>0?`${Math.min(100,(spent/(personOpening+earned))*100)}%`:"0%",background:clr,borderRadius:99}}/>
                       </div>
                     </div>
                   );
@@ -342,12 +525,14 @@ export default function App() {
           </div>
         )}
 
-        {tab==="transactions"&&<TransactionsTab s={s} addTxn={addTxn} delTxn={delTxn} activeMonth={activeMonth} setActiveMonth={setActiveMonth} getTxns={getTxns} summarize={summarize}/>}
+        {tab==="transactions"&&<TransactionsTab s={s} addTxn={addTxn} delTxn={delTxn} activeMonth={activeMonth} setActiveMonth={setActiveMonth} activeYear={activeYear} getTxns={getTxns} summarize={summarize}/>}
         {tab==="plan"&&<PlanTab s={s} upd={upd} totalIncome={totalIncome} totalFixed={totalFixed} totalSavings={totalSavings} transactions={s.transactions}/>}
-        {tab==="credit cards"&&<CreditCardsTab s={s} upd={upd} transactions={s.transactions} getTxns={getTxns} activeMonth={activeMonth} setActiveMonth={setActiveMonth} addTxn={addTxn}/>}
+        {tab==="credit cards"&&<CreditCardsTab s={s} upd={upd} transactions={s.transactions} getTxns={getTxns} activeMonth={activeMonth} setActiveMonth={setActiveMonth} activeYear={activeYear} addTxn={addTxn}/>}
       </div>
 
-      <button onClick={()=>setShowQuickAdd(true)} style={{position:"fixed",bottom:28,right:28,width:56,height:56,borderRadius:"50%",background:`linear-gradient(135deg,${T.accent},${T.purple})`,border:"none",color:"white",fontSize:26,cursor:"pointer",boxShadow:`0 4px 24px ${T.accent}66`,zIndex:200,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+      {/* FAB */}
+      <button onClick={()=>{setQuickForm(f=>({...f,date:`${activeYear}-${mNum(activeMonth)}-01`}));setShowQuickAdd(true);}}
+        style={{position:"fixed",bottom:28,right:28,width:56,height:56,borderRadius:"50%",background:`linear-gradient(135deg,${T.accent},${T.purple})`,border:"none",color:"white",fontSize:26,cursor:"pointer",boxShadow:`0 4px 24px ${T.accent}66`,zIndex:200,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
 
       <Modal open={showQuickAdd} onClose={()=>setShowQuickAdd(false)} title="⚡ Quick Add">
         <TxnForm state={s} value={quickForm} onChange={setQuickForm} onSubmit={()=>{
@@ -361,11 +546,11 @@ export default function App() {
 }
 
 // ─── Transactions Tab ──────────────────────────────────────────────────────────
-function TransactionsTab({s,addTxn,delTxn,activeMonth,setActiveMonth,getTxns,summarize}) {
-  const [form,setForm] = useState({date:`2026-${mNum(activeMonth)}-01`,category:"VARIABLE EXPENSES",subCat:s.variableSubCats[0]||"",spentOn:"",amount:"",person:s.members[0]||"NARR",note:"",tags:[],ccId:undefined});
+function TransactionsTab({s,addTxn,delTxn,activeMonth,setActiveMonth,activeYear,getTxns,summarize}) {
+  const [form,setForm] = useState({date:`${activeYear}-${mNum(activeMonth)}-01`,category:"VARIABLE EXPENSES",subCat:s.variableSubCats[0]||"",spentOn:"",amount:"",person:s.members[0]||"NARR",note:"",tags:[],ccId:undefined});
   const [filter,setFilter] = useState("ALL");
   const [search,setSearch] = useState("");
-  const monthTxns = getTxns(activeMonth);
+  const monthTxns = getTxns(activeMonth,activeYear);
   const summary = summarize(monthTxns);
   const filtered = monthTxns.filter(t=>{
     if(filter!=="ALL"&&t.category!==filter) return false;
@@ -380,14 +565,15 @@ function TransactionsTab({s,addTxn,delTxn,activeMonth,setActiveMonth,getTxns,sum
         <TxnForm state={s} value={form} onChange={setForm} onSubmit={()=>{addTxn(form);setForm(f=>({...f,spentOn:"",amount:"",note:"",tags:[]}));}}/>
       </Card>
       <div>
-        <div style={{display:"flex",gap:5,marginBottom:12,flexWrap:"wrap"}}>
-          {MONTHS.map(m=>{const txns=getTxns(m);return(
+        <div style={{display:"flex",gap:5,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
+          <span style={{fontSize:11,color:T.muted,fontWeight:700,marginRight:4}}>{activeYear}</span>
+          {MONTHS.map(m=>{const txns=getTxns(m,activeYear);return(
             <button key={m} onClick={()=>setActiveMonth(m)} style={{background:activeMonth===m?T.accent:"transparent",color:activeMonth===m?T.bg:txns.length?T.accent:T.muted,border:`1px solid ${activeMonth===m?T.accent:txns.length?T.accent+"44":T.border}`,borderRadius:7,padding:"4px 12px",fontSize:11,fontWeight:700,cursor:"pointer"}}>{m}{txns.length>0?` (${txns.length})`:""}</button>
           );})}
         </div>
         <Card>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:10}}>
-            <div style={{fontWeight:700,fontSize:14}}>{activeMonth} 2026 · {monthTxns.length} entries</div>
+            <div style={{fontWeight:700,fontSize:14}}>{activeMonth} {activeYear} · {monthTxns.length} entries</div>
             <div style={{display:"flex",gap:12,fontSize:13}}>
               <span style={{color:T.accent}}>In: {fmt(summary.income)}</span>
               <span style={{color:T.rose}}>Out: {fmt(summary.fixed+summary.variable+summary.ccPaid)}</span>
@@ -446,7 +632,6 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions}) {
   const startEdit=(id,val)=>{setEditId(id);setEditVal(val);};
   const stopEdit=()=>{setEditId(null);setEditVal({});};
   const planBalance=totalIncome-totalFixed-s.variableBudget-totalSavings;
-
   const iStyle={background:T.surface,border:`1px solid ${T.border}`,color:T.text,borderRadius:7,padding:"6px 9px",fontSize:12,outline:"none"};
 
   return(
@@ -469,25 +654,14 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions}) {
         </div>
       </Card>
 
-      {/* Income */}
       <Card>
         <div style={{fontWeight:700,fontSize:14,color:T.accent,marginBottom:14}}>💰 Income Sources</div>
         {s.income.map(inc=>(
           <div key={inc.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
             {editId===inc.id?(
-              <>
-                <input value={editVal.label||""} onChange={e=>setEditVal(v=>({...v,label:e.target.value}))} style={{...iStyle,flex:1}}/>
-                <input type="number" value={editVal.amount||""} onChange={e=>setEditVal(v=>({...v,amount:+e.target.value}))} style={{...iStyle,width:110,color:T.accent,fontWeight:700,textAlign:"right"}}/>
-                <Btn small onClick={()=>{upd({income:s.income.map(i=>i.id===inc.id?{...i,...editVal}:i)});stopEdit();}}>✓</Btn>
-                <Btn small variant="outline" color={T.muted} onClick={stopEdit}>×</Btn>
-              </>
+              <><input value={editVal.label||""} onChange={e=>setEditVal(v=>({...v,label:e.target.value}))} style={{...iStyle,flex:1}}/><input type="number" value={editVal.amount||""} onChange={e=>setEditVal(v=>({...v,amount:+e.target.value}))} style={{...iStyle,width:110,color:T.accent,fontWeight:700,textAlign:"right"}}/><Btn small onClick={()=>{upd({income:s.income.map(i=>i.id===inc.id?{...i,...editVal}:i)});stopEdit();}}>✓</Btn><Btn small variant="outline" color={T.muted} onClick={stopEdit}>×</Btn></>
             ):(
-              <>
-                <span style={{flex:1,fontSize:13}}>{inc.label}</span>
-                <span style={{fontWeight:700,color:T.accent}}>{fmt(inc.amount)}</span>
-                <Btn small variant="outline" color={T.blue} onClick={()=>startEdit(inc.id,{label:inc.label,amount:inc.amount})}>✏️</Btn>
-                <Btn small variant="outline" color={T.rose} onClick={()=>upd({income:s.income.filter(i=>i.id!==inc.id)})}>🗑</Btn>
-              </>
+              <><span style={{flex:1,fontSize:13}}>{inc.label}</span><span style={{fontWeight:700,color:T.accent}}>{fmt(inc.amount)}</span><Btn small variant="outline" color={T.blue} onClick={()=>startEdit(inc.id,{label:inc.label,amount:inc.amount})}>✏️</Btn><Btn small variant="outline" color={T.rose} onClick={()=>upd({income:s.income.filter(i=>i.id!==inc.id)})}>🗑</Btn></>
             )}
           </div>
         ))}
@@ -496,12 +670,9 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions}) {
           <input type="number" value={newIncome.amount} onChange={e=>setNewIncome(v=>({...v,amount:e.target.value}))} placeholder="₹" style={{...iStyle,width:90,textAlign:"right"}}/>
           <Btn small onClick={()=>{if(!newIncome.label||!newIncome.amount)return;upd({income:[...s.income,{id:uid(),label:newIncome.label,amount:+newIncome.amount}]});setNewIncome({label:"",amount:""});}}>+ Add</Btn>
         </div>
-        <div style={{borderTop:`1px solid ${T.border}`,paddingTop:10,marginTop:8,display:"flex",justifyContent:"space-between",fontWeight:800}}>
-          <span>Total</span><span style={{color:T.accent}}>{fmt(totalIncome)}</span>
-        </div>
+        <div style={{borderTop:`1px solid ${T.border}`,paddingTop:10,marginTop:8,display:"flex",justifyContent:"space-between",fontWeight:800}}><span>Total</span><span style={{color:T.accent}}>{fmt(totalIncome)}</span></div>
       </Card>
 
-      {/* Savings Goals */}
       <Card style={{gridRow:"span 2"}}>
         <div style={{fontWeight:700,fontSize:14,color:T.purple,marginBottom:14}}>🎯 Savings Goals & Progress</div>
         {s.savings.map((sv,i)=>{
@@ -513,25 +684,19 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions}) {
             <div key={sv.id} style={{marginBottom:14,padding:14,background:T.surface,borderRadius:12,border:`1px solid ${T.border}`}}>
               {editId===sv.id?(
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  <input value={editVal.label||""} onChange={e=>setEditVal(v=>({...v,label:e.target.value}))} placeholder="Goal name" style={{...iStyle}}/>
+                  <input value={editVal.label||""} onChange={e=>setEditVal(v=>({...v,label:e.target.value}))} style={{...iStyle}}/>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                     <input type="number" value={editVal.monthlyTarget||""} onChange={e=>setEditVal(v=>({...v,monthlyTarget:+e.target.value}))} placeholder="Monthly ₹" style={{...iStyle}}/>
                     <input type="number" value={editVal.goalTarget||""} onChange={e=>setEditVal(v=>({...v,goalTarget:+e.target.value}))} placeholder="Goal ₹" style={{...iStyle}}/>
                   </div>
-                  <div style={{display:"flex",gap:8}}>
-                    <Btn small onClick={()=>{upd({savings:s.savings.map(s2=>s2.id===sv.id?{...s2,...editVal}:s2)});stopEdit();}}>Save</Btn>
-                    <Btn small variant="outline" color={T.muted} onClick={stopEdit}>Cancel</Btn>
-                  </div>
+                  <div style={{display:"flex",gap:8}}><Btn small onClick={()=>{upd({savings:s.savings.map(s2=>s2.id===sv.id?{...s2,...editVal}:s2)});stopEdit();}}>Save</Btn><Btn small variant="outline" color={T.muted} onClick={stopEdit}>Cancel</Btn></div>
                 </div>
               ):(
                 <>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                     <div>
                       <div style={{fontWeight:700,fontSize:13,color:clr}}>{sv.label}</div>
-                      <div style={{fontSize:11,color:T.muted,marginTop:2}}>
-                        {fmt(contributed)} of {fmt(sv.goalTarget)}
-                        {monthsLeft&&<span style={{color:T.amber}}> · {monthsLeft} months to go</span>}
-                      </div>
+                      <div style={{fontSize:11,color:T.muted,marginTop:2}}>{fmt(contributed)} of {fmt(sv.goalTarget)}{monthsLeft&&<span style={{color:T.amber}}> · {monthsLeft} months to go</span>}</div>
                     </div>
                     <div style={{display:"flex",gap:6,alignItems:"center"}}>
                       <span style={{fontSize:15,fontWeight:800,color:clr}}>{pct.toFixed(0)}%</span>
@@ -539,9 +704,7 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions}) {
                       <Btn small variant="outline" color={T.rose} onClick={()=>upd({savings:s.savings.filter(s2=>s2.id!==sv.id)})}>🗑</Btn>
                     </div>
                   </div>
-                  <div style={{height:6,background:T.border,borderRadius:99,marginBottom:6}}>
-                    <div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(90deg,${clr},${clr}99)`,borderRadius:99,transition:"width 0.5s"}}/>
-                  </div>
+                  <div style={{height:6,background:T.border,borderRadius:99,marginBottom:6}}><div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(90deg,${clr},${clr}99)`,borderRadius:99}}/></div>
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:T.muted}}>
                     <span>Monthly: <span style={{color:T.purple,fontWeight:600}}>{fmt(sv.monthlyTarget)}</span></span>
                     <span>Goal: <span style={{color:clr,fontWeight:600}}>{fmt(sv.goalTarget)}</span></span>
@@ -564,25 +727,14 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions}) {
         </div>
       </Card>
 
-      {/* Fixed Expenses */}
       <Card>
         <div style={{fontWeight:700,fontSize:14,color:T.blue,marginBottom:14}}>🔒 Fixed Expenses</div>
         {s.fixedExpenses.map(fe=>(
           <div key={fe.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:9}}>
             {editId===fe.id?(
-              <>
-                <input value={editVal.label||""} onChange={e=>setEditVal(v=>({...v,label:e.target.value}))} style={{...iStyle,flex:1}}/>
-                <input type="number" value={editVal.budget||""} onChange={e=>setEditVal(v=>({...v,budget:+e.target.value}))} style={{...iStyle,width:100,color:T.blue,fontWeight:700,textAlign:"right"}}/>
-                <Btn small onClick={()=>{upd({fixedExpenses:s.fixedExpenses.map(f=>f.id===fe.id?{...f,...editVal}:f)});stopEdit();}}>✓</Btn>
-                <Btn small variant="outline" color={T.muted} onClick={stopEdit}>×</Btn>
-              </>
+              <><input value={editVal.label||""} onChange={e=>setEditVal(v=>({...v,label:e.target.value}))} style={{...iStyle,flex:1}}/><input type="number" value={editVal.budget||""} onChange={e=>setEditVal(v=>({...v,budget:+e.target.value}))} style={{...iStyle,width:100,color:T.blue,fontWeight:700,textAlign:"right"}}/><Btn small onClick={()=>{upd({fixedExpenses:s.fixedExpenses.map(f=>f.id===fe.id?{...f,...editVal}:f)});stopEdit();}}>✓</Btn><Btn small variant="outline" color={T.muted} onClick={stopEdit}>×</Btn></>
             ):(
-              <>
-                <span style={{flex:1,fontSize:13}}>{fe.label}</span>
-                <span style={{fontWeight:700,color:T.blue,fontSize:13}}>{fmt(fe.budget)}</span>
-                <Btn small variant="outline" color={T.blue} onClick={()=>startEdit(fe.id,{label:fe.label,budget:fe.budget})}>✏️</Btn>
-                <Btn small variant="outline" color={T.rose} onClick={()=>upd({fixedExpenses:s.fixedExpenses.filter(f=>f.id!==fe.id)})}>🗑</Btn>
-              </>
+              <><span style={{flex:1,fontSize:13}}>{fe.label}</span><span style={{fontWeight:700,color:T.blue,fontSize:13}}>{fmt(fe.budget)}</span><Btn small variant="outline" color={T.blue} onClick={()=>startEdit(fe.id,{label:fe.label,budget:fe.budget})}>✏️</Btn><Btn small variant="outline" color={T.rose} onClick={()=>upd({fixedExpenses:s.fixedExpenses.filter(f=>f.id!==fe.id)})}>🗑</Btn></>
             )}
           </div>
         ))}
@@ -591,20 +743,16 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions}) {
           <input type="number" value={newFixed.budget} onChange={e=>setNewFixed(v=>({...v,budget:e.target.value}))} placeholder="₹" style={{...iStyle,width:80,textAlign:"right"}}/>
           <Btn small onClick={()=>{if(!newFixed.label||!newFixed.budget)return;upd({fixedExpenses:[...s.fixedExpenses,{id:uid(),label:newFixed.label,budget:+newFixed.budget}]});setNewFixed({label:"",budget:""});}}>+ Add</Btn>
         </div>
-        <div style={{borderTop:`1px solid ${T.border}`,paddingTop:10,marginTop:8,display:"flex",justifyContent:"space-between",fontWeight:800}}>
-          <span>Total Fixed</span><span style={{color:T.blue}}>{fmt(totalFixed)}</span>
-        </div>
+        <div style={{borderTop:`1px solid ${T.border}`,paddingTop:10,marginTop:8,display:"flex",justifyContent:"space-between",fontWeight:800}}><span>Total Fixed</span><span style={{color:T.blue}}>{fmt(totalFixed)}</span></div>
       </Card>
 
-      {/* Variable Sub-Categories */}
       <Card>
         <div style={{fontWeight:700,fontSize:14,color:T.amber,marginBottom:14}}>📊 Variable Expenses</div>
         <div style={{marginBottom:14}}>
           <label style={{color:T.muted,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Monthly Budget</label>
           <div style={{display:"flex",alignItems:"center",gap:8,marginTop:6}}>
             <span style={{color:T.muted}}>₹</span>
-            <input type="number" value={s.variableBudget} onChange={e=>upd({variableBudget:+e.target.value})}
-              style={{background:T.surface,border:`1px solid ${T.border}`,color:T.amber,borderRadius:8,padding:"8px 12px",width:140,fontSize:15,fontWeight:800,textAlign:"right",outline:"none"}}/>
+            <input type="number" value={s.variableBudget} onChange={e=>upd({variableBudget:+e.target.value})} style={{background:T.surface,border:`1px solid ${T.border}`,color:T.amber,borderRadius:8,padding:"8px 12px",width:140,fontSize:15,fontWeight:800,textAlign:"right",outline:"none"}}/>
           </div>
         </div>
         <div style={{fontWeight:600,fontSize:11,color:T.muted,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em"}}>Sub-Categories</div>
@@ -617,9 +765,7 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions}) {
           ))}
         </div>
         <div style={{display:"flex",gap:8}}>
-          <input value={newVariableCat} onChange={e=>setNewVariableCat(e.target.value.toUpperCase())} placeholder="NEW CATEGORY"
-            onKeyDown={e=>{if(e.key==="Enter"&&newVariableCat.trim()){upd({variableSubCats:[...s.variableSubCats,newVariableCat.trim()]});setNewVariableCat("");}}}
-            style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,color:T.text,borderRadius:7,padding:"7px 10px",fontSize:12,outline:"none"}}/>
+          <input value={newVariableCat} onChange={e=>setNewVariableCat(e.target.value.toUpperCase())} placeholder="NEW CATEGORY" onKeyDown={e=>{if(e.key==="Enter"&&newVariableCat.trim()){upd({variableSubCats:[...s.variableSubCats,newVariableCat.trim()]});setNewVariableCat("");}}} style={{flex:1,background:T.surface,border:`1px solid ${T.border}`,color:T.text,borderRadius:7,padding:"7px 10px",fontSize:12,outline:"none"}}/>
           <Btn small color={T.amber} onClick={()=>{if(!newVariableCat.trim())return;upd({variableSubCats:[...s.variableSubCats,newVariableCat.trim()]});setNewVariableCat("");}}>+ Add</Btn>
         </div>
       </Card>
@@ -628,22 +774,19 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions}) {
 }
 
 // ─── Credit Cards Tab ──────────────────────────────────────────────────────────
-function CreditCardsTab({s,upd,transactions,getTxns,activeMonth,setActiveMonth,addTxn}) {
+function CreditCardsTab({s,upd,transactions,getTxns,activeMonth,setActiveMonth,activeYear,addTxn}) {
   const [showAddCard,setShowAddCard] = useState(false);
   const [newCard,setNewCard] = useState({name:"",person:s.members[0]||"NARR",outstanding:"",limit:""});
-  const [payForm,setPayForm] = useState({ccId:null,amount:"",date:`2026-${mNum(activeMonth)}-01`,note:""});
+  const [payForm,setPayForm] = useState({ccId:null,amount:"",date:`${activeYear}-${mNum(activeMonth)}-01`,note:""});
   const [editCardId,setEditCardId] = useState(null);
   const [editCardVal,setEditCardVal] = useState({});
 
-  const ccStats = useMemo(()=>{
-    return s.creditCards.map(cc=>{
-      const allPaid=transactions.filter(t=>t.category==="CC PAYMENT"&&t.ccId===cc.id).reduce((a,t)=>a+t.amount,0);
-      const monthPaid=getTxns(activeMonth).filter(t=>t.category==="CC PAYMENT"&&t.ccId===cc.id).reduce((a,t)=>a+t.amount,0);
-      const balance=cc.outstanding-allPaid;
-      const recentPmts=transactions.filter(t=>t.category==="CC PAYMENT"&&t.ccId===cc.id).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
-      return {...cc,allPaid,monthPaid,balance,recentPmts};
-    });
-  },[s.creditCards,transactions,activeMonth]);
+  const ccStats = useMemo(()=>s.creditCards.map(cc=>{
+    const allPaid=transactions.filter(t=>t.category==="CC PAYMENT"&&t.ccId===cc.id).reduce((a,t)=>a+t.amount,0);
+    const monthPaid=getTxns(activeMonth,activeYear).filter(t=>t.category==="CC PAYMENT"&&t.ccId===cc.id).reduce((a,t)=>a+t.amount,0);
+    const recentPmts=transactions.filter(t=>t.category==="CC PAYMENT"&&t.ccId===cc.id).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
+    return {...cc,allPaid,monthPaid,balance:cc.outstanding-allPaid,recentPmts};
+  }),[s.creditCards,transactions,activeMonth,activeYear]);
 
   const CC_COLORS=[T.accent,T.purple,T.blue,T.amber,T.green];
   const iStyle={background:T.surface,border:`1px solid ${T.border}`,color:T.text,borderRadius:7,padding:"6px 9px",fontSize:12,outline:"none"};
@@ -669,14 +812,13 @@ function CreditCardsTab({s,upd,transactions,getTxns,activeMonth,setActiveMonth,a
           </Card>
         ))}
       </div>
-
-      <div style={{display:"flex",gap:5,marginBottom:16,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:5,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+        <span style={{fontSize:11,color:T.muted,fontWeight:700,marginRight:4}}>{activeYear}</span>
         {MONTHS.map(m=>{
-          const has=transactions.filter(t=>t.category==="CC PAYMENT"&&t.date.startsWith(`2026-${mNum(m)}`)).length>0;
+          const has=transactions.filter(t=>t.category==="CC PAYMENT"&&t.date.startsWith(`${activeYear}-${mNum(m)}`)).length>0;
           return <button key={m} onClick={()=>setActiveMonth(m)} style={{background:activeMonth===m?T.rose:"transparent",color:activeMonth===m?T.bg:has?T.rose:T.muted,border:`1px solid ${activeMonth===m?T.rose:has?T.rose+"55":T.border}`,borderRadius:7,padding:"4px 12px",fontSize:11,fontWeight:700,cursor:"pointer"}}>{m}</button>;
         })}
       </div>
-
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(400px,1fr))",gap:18,marginBottom:20}}>
         {ccStats.map((cc,i)=>{
           const clr=CC_COLORS[i%CC_COLORS.length];
@@ -693,10 +835,7 @@ function CreditCardsTab({s,upd,transactions,getTxns,activeMonth,setActiveMonth,a
                         <input type="number" value={editCardVal.outstanding||""} onChange={e=>setEditCardVal(v=>({...v,outstanding:+e.target.value}))} placeholder="Outstanding ₹" style={{...iStyle}}/>
                         <input type="number" value={editCardVal.limit||""} onChange={e=>setEditCardVal(v=>({...v,limit:+e.target.value}))} placeholder="Limit ₹" style={{...iStyle}}/>
                       </div>
-                      <div style={{display:"flex",gap:6}}>
-                        <Btn small onClick={()=>{upd({creditCards:s.creditCards.map(c=>c.id===cc.id?{...c,...editCardVal}:c)});setEditCardId(null);}}>Save</Btn>
-                        <Btn small variant="outline" color={T.muted} onClick={()=>setEditCardId(null)}>Cancel</Btn>
-                      </div>
+                      <div style={{display:"flex",gap:6}}><Btn small onClick={()=>{upd({creditCards:s.creditCards.map(c=>c.id===cc.id?{...c,...editCardVal}:c)});setEditCardId(null);}}>Save</Btn><Btn small variant="outline" color={T.muted} onClick={()=>setEditCardId(null)}>Cancel</Btn></div>
                     </div>
                   ):(
                     <div style={{fontSize:20,fontWeight:800,color:clr}}>{cc.name}</div>
@@ -708,10 +847,9 @@ function CreditCardsTab({s,upd,transactions,getTxns,activeMonth,setActiveMonth,a
                   <Btn small variant="outline" color={T.rose} onClick={()=>upd({creditCards:s.creditCards.filter(c=>c.id!==cc.id)})}>🗑</Btn>
                 </div>
               </div>
-
               {[
                 {label:"Outstanding Balance (Start)",val:cc.outstanding,color:T.rose},
-                {label:`Paid in ${activeMonth}`,val:cc.monthPaid,color:clr},
+                {label:`Paid in ${activeMonth} ${activeYear}`,val:cc.monthPaid,color:clr},
                 {label:"Total Paid (All Time)",val:cc.allPaid,color:T.accent},
                 {label:"Remaining Balance",val:cc.balance,color:cc.balance>0?T.amber:T.green},
                 ...(cc.limit?[{label:"Credit Limit",val:cc.limit,color:T.muted}]:[]),
@@ -721,17 +859,13 @@ function CreditCardsTab({s,upd,transactions,getTxns,activeMonth,setActiveMonth,a
                   <span style={{fontSize:13,fontWeight:700,color:row.color}}>{fmt(row.val)}</span>
                 </div>
               ))}
-
               <div style={{margin:"14px 0"}}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
                   <span style={{fontSize:11,color:T.muted}}>Repayment Progress</span>
                   <span style={{fontSize:11,fontWeight:700,color:clr}}>{repayPct.toFixed(1)}%</span>
                 </div>
-                <div style={{height:6,background:T.border,borderRadius:99}}>
-                  <div style={{height:"100%",width:`${repayPct}%`,background:`linear-gradient(90deg,${clr},${clr}99)`,borderRadius:99,transition:"width 0.5s"}}/>
-                </div>
+                <div style={{height:6,background:T.border,borderRadius:99}}><div style={{height:"100%",width:`${repayPct}%`,background:`linear-gradient(90deg,${clr},${clr}99)`,borderRadius:99}}/></div>
               </div>
-
               {payForm.ccId===cc.id?(
                 <div style={{padding:12,background:T.surface,borderRadius:10,border:`1px solid ${clr}44`}}>
                   <div style={{fontWeight:700,fontSize:12,color:clr,marginBottom:8}}>Log Payment</div>
@@ -740,21 +874,17 @@ function CreditCardsTab({s,upd,transactions,getTxns,activeMonth,setActiveMonth,a
                     <input type="number" value={payForm.amount} onChange={e=>setPayForm(f=>({...f,amount:e.target.value}))} placeholder="Amount ₹" style={{...iStyle}}/>
                   </div>
                   <input value={payForm.note} onChange={e=>setPayForm(f=>({...f,note:e.target.value}))} placeholder="Note (optional)" style={{...iStyle,width:"100%",boxSizing:"border-box",marginBottom:8}}/>
-                  <div style={{display:"flex",gap:8}}>
-                    <Btn small color={clr} onClick={()=>logPayment(cc.id)}>Submit Payment</Btn>
-                    <Btn small variant="outline" color={T.muted} onClick={()=>setPayForm(f=>({...f,ccId:null}))}>Cancel</Btn>
-                  </div>
+                  <div style={{display:"flex",gap:8}}><Btn small color={clr} onClick={()=>logPayment(cc.id)}>Submit Payment</Btn><Btn small variant="outline" color={T.muted} onClick={()=>setPayForm(f=>({...f,ccId:null}))}>Cancel</Btn></div>
                 </div>
               ):(
-                <Btn color={clr} onClick={()=>setPayForm(f=>({...f,ccId:cc.id,date:`2026-${mNum(activeMonth)}-01`,amount:""}))}>+ Log Payment</Btn>
+                <Btn color={clr} onClick={()=>setPayForm(f=>({...f,ccId:cc.id,date:`${activeYear}-${mNum(activeMonth)}-01`,amount:""}))}>+ Log Payment</Btn>
               )}
-
               {cc.recentPmts.length>0&&(
                 <div style={{marginTop:12}}>
                   <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Recent Payments</div>
                   {cc.recentPmts.map(t=>(
                     <div key={t.id} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${T.border}22`}}>
-                      <span style={{fontSize:11,color:T.muted}}>{t.date.slice(5)} — {t.note||"Payment"}</span>
+                      <span style={{fontSize:11,color:T.muted}}>{t.date} — {t.note||"Payment"}</span>
                       <span style={{fontSize:11,fontWeight:700,color:clr}}>{fmt(t.amount)}</span>
                     </div>
                   ))}
@@ -763,7 +893,6 @@ function CreditCardsTab({s,upd,transactions,getTxns,activeMonth,setActiveMonth,a
             </Card>
           );
         })}
-
         {showAddCard?(
           <Card style={{border:`1px dashed ${T.accent}55`}}>
             <div style={{fontWeight:700,fontSize:14,color:T.accent,marginBottom:14}}>+ New Credit Card</div>
