@@ -338,7 +338,9 @@ function OpeningBalanceCard({state,upd,activeYear,activeMonth}) {
 // ─── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
   const isMobile=useIsMobile();
-  const [s,setS]=useState(null);
+  // s starts as DEFAULTS so hooks always run — never null (fixes React error #310)
+  const [s,setS]=useState({...DEFAULTS,transactions:SEED});
+  const [loaded,setLoaded]=useState(false);
   const [syncStatus,setSyncStatus]=useState("connecting");
   const isRemote=useRef(false);
   const saveTimer=useRef(null);
@@ -350,12 +352,13 @@ export default function App() {
       if(snap.exists()) setS(mergeData(snap.data()));
       else { const init={...DEFAULTS,transactions:SEED}; setDoc(FIRESTORE_DOC,init); setS(init); }
       setSyncStatus("live");
-    },()=>setSyncStatus("error"));
+      setLoaded(true);
+    },()=>{ setSyncStatus("error"); setLoaded(true); });
     return unsub;
   },[]);
 
   useEffect(()=>{
-    if(!s) return;
+    if(!loaded) return;
     if(isRemote.current){ isRemote.current=false; return; }
     if(syncStatus==="connecting") return;
     clearTimeout(saveTimer.current);
@@ -365,7 +368,7 @@ export default function App() {
     },1000);
   },[s]);
 
-  const upd=useCallback(patch=>setS(p=>p?({...p,...patch}):p),[]);
+  const upd=useCallback(patch=>setS(p=>({...p,...patch})),[]);
 
   const [tab,setTab]=useState("dashboard");
   const [activeYear,setActiveYear]=useState(2026);
@@ -377,21 +380,9 @@ export default function App() {
   const [quickForm,setQuickForm]=useState({date:defaultDate,category:"VARIABLE EXPENSES",subCat:"CAFES/RESTAURANTS",spentOn:"",amount:"",person:"NARR",note:"",tags:[]});
 
   useOutsideClick(yearPickerRef,useCallback(()=>setShowYearPicker(false),[]));
-  // Keep quick form date in sync
   useEffect(()=>{ setQuickForm(f=>({...f,date:`${activeYear}-${mNum(activeMonth)}-01`})); },[activeYear,activeMonth]);
 
-  if(!s) return(
-    <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,fontFamily:"'DM Sans','Segoe UI',sans-serif"}}>
-      <div style={{width:48,height:48,borderRadius:14,background:`linear-gradient(135deg,${T.accent},${T.purple})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>🪙</div>
-      <div style={{color:T.text,fontWeight:700,fontSize:18}}>Narangi Finance</div>
-      <div style={{display:"flex",gap:6,alignItems:"center"}}>
-        <div style={{width:6,height:6,borderRadius:"50%",background:T.accent,animation:"pulse 1s infinite"}}/>
-        <span style={{color:T.muted,fontSize:13}}>Connecting to database…</span>
-      </div>
-      <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}`}</style>
-    </div>
-  );
-
+  // ALL useMemo/derived values — after all hooks, before any conditional return
   const members=s.members||DEFAULTS.members;
   const getTxns=(m,y=activeYear)=>(s.transactions||[]).filter(t=>t.date.startsWith(`${y}-${mNum(m)}`));
   const summarize=txns=>({
@@ -441,6 +432,19 @@ export default function App() {
   const syncLabel={live:"Synced",saving:"Saving…",connecting:"Connecting…",error:"Sync error"}[syncStatus];
   const TABS=[{id:"dashboard",icon:"📊",label:"Dashboard"},{id:"transactions",icon:"📋",label:"Txns"},{id:"plan",icon:"🎯",label:"Plan"},{id:"credit cards",icon:"💳",label:"Cards"}];
   const p=isMobile?12:24;
+
+  // Loading screen shown inside JSX — all hooks already called above
+  if(!loaded) return(
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,fontFamily:"'DM Sans','Segoe UI',sans-serif"}}>
+      <div style={{width:48,height:48,borderRadius:14,background:`linear-gradient(135deg,${T.accent},${T.purple})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>🪙</div>
+      <div style={{color:T.text,fontWeight:700,fontSize:18}}>Narangi Finance</div>
+      <div style={{display:"flex",gap:6,alignItems:"center"}}>
+        <div style={{width:6,height:6,borderRadius:"50%",background:T.accent,animation:"pulse 1s infinite"}}/>
+        <span style={{color:T.muted,fontSize:13}}>Connecting to database…</span>
+      </div>
+      <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}`}</style>
+    </div>
+  );
 
   return(
     <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'DM Sans','Segoe UI',sans-serif",paddingBottom:isMobile?76:80}}>
