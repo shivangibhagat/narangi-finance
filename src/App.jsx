@@ -18,8 +18,13 @@ const monthKey = (y,m) => `${y}-${mNum(m)}`;
 const ccKey = (ccId,y,m) => `${ccId}_${y}-${mNum(m)}`;
 const CAT_CLR = { INCOME:T.accent,"FIXED EXPENSES":T.blue,"VARIABLE EXPENSES":T.amber,SAVINGS:T.purple,"CC PAYMENT":T.rose };
 const PIE_COLORS = [T.accent,T.blue,T.amber,T.purple,T.rose,"#34D399","#818CF8","#FB923C"];
-const YEARS = [2025,2026,2027,2028,2029,2030];
+const YEARS = [2026,2027,2028,2029,2030];
 const CATS = ["INCOME","FIXED EXPENSES","VARIABLE EXPENSES","SAVINGS","CC PAYMENT"];
+// Tracking started May 2026 — hide earlier months for that year
+const START_YEAR = 2026;
+const START_MONTH = "May";
+const START_MONTH_IDX = MONTHS.indexOf(START_MONTH); // 4
+const getVisibleMonths = (year) => year === START_YEAR ? MONTHS.slice(START_MONTH_IDX) : MONTHS;
 const CAT_ICON = { INCOME:"💰","FIXED EXPENSES":"🔒","VARIABLE EXPENSES":"📊",SAVINGS:"🎯","CC PAYMENT":"💳" };
 
 // ─── Hooks ─────────────────────────────────────────────────────────────────────
@@ -46,7 +51,7 @@ const confirmDel = label => window.confirm(`Delete "${label}"?\nThis cannot be u
 // FIX: correctly starts from initialOutstanding and rolls forward
 function computeCCBalance(cc, upToYear, upToMonth, transactions, ccMonthlyCharges) {
   let bal = cc.initialOutstanding || cc.outstanding || 0; // FIX: fallback to old 'outstanding' field
-  for(let y=2025; y<=upToYear; y++) {
+  for(let y=START_YEAR; y<=upToYear; y++) {
     const maxMi = y===upToYear ? MONTHS.indexOf(upToMonth)-1 : 11;
     for(let mi=0; mi<=maxMi; mi++) {
       const m=MONTHS[mi];
@@ -214,7 +219,7 @@ function TxnForm({state,value,onChange,onSubmit,submitLabel="Add Transaction"}) 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-        <TI label="Date" type="date" value={value.date} onChange={v=>upd({date:v})}/>
+        <TI label="Date" type="date" value={value.date} onChange={v=>upd({date:v})} style={{}} min="2026-05-01"/>
         <Sel label="Person" value={value.person} onChange={v=>upd({person:v})} options={members}/>
       </div>
       <Sel label="Category" value={value.category} onChange={v=>{
@@ -396,7 +401,11 @@ export default function App() {
   const monthTxns=useMemo(()=>getTxns(activeMonth,activeYear),[s.transactions,activeMonth,activeYear]);
   const summary=useMemo(()=>summarize(monthTxns),[monthTxns]);
   const prevIdx=MONTHS.indexOf(activeMonth)-1;
-  const prevSummary=useMemo(()=>summarize(prevIdx>=0?getTxns(MONTHS[prevIdx],activeYear):getTxns("Dec",activeYear-1)),[s.transactions,activeMonth,activeYear]);
+  const isFirstTrackedMonth = activeYear===START_YEAR && activeMonth===START_MONTH;
+  const prevSummary=useMemo(()=>{
+    if(isFirstTrackedMonth) return {income:0,fixed:0,variable:0,savings:0,ccPaid:0};
+    return summarize(prevIdx>=0?getTxns(MONTHS[prevIdx],activeYear):getTxns("Dec",activeYear-1));
+  },[s.transactions,activeMonth,activeYear]);
 
   const ob=s.openingBalances?.[monthKey(activeYear,activeMonth)]||{};
   const openingTotal=members.reduce((a,m)=>a+(ob[m]||0),0);
@@ -416,7 +425,7 @@ export default function App() {
   const delTxn=id=>{ if(confirmDel((s.transactions||[]).find(t=>t.id===id)?.spentOn||"this")) upd({transactions:(s.transactions||[]).filter(t=>t.id!==id)}); };
   const saveEditTxn=form=>{ upd({transactions:(s.transactions||[]).map(t=>t.id===form.id?{...form,amount:parseFloat(form.amount)||0}:t)}); setEditTxn(null); };
 
-  const annualData=useMemo(()=>MONTHS.map(m=>{
+  const annualData=useMemo(()=>getVisibleMonths(activeYear).map(m=>{
     const t=summarize(getTxns(m,activeYear));
     const ob2=s.openingBalances?.[monthKey(activeYear,m)]||{};
     return {month:m,income:t.income,expenses:t.fixed+t.variable,savings:t.savings,opening:members.reduce((a,mem)=>a+(ob2[mem]||0),0)};
@@ -466,7 +475,7 @@ export default function App() {
             <button onClick={()=>setShowYearPicker(v=>!v)} style={{background:T.card,border:`1px solid ${T.border}`,color:T.accent,borderRadius:8,padding:"6px 12px",fontSize:13,fontWeight:700,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>{activeYear} ▾</button>
             {showYearPicker&&(
               <div style={{position:"absolute",top:isMobile?56:64,right:p,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:8,zIndex:300,boxShadow:"0 8px 32px #00000088"}}>
-                {YEARS.map(y=><button key={y} onClick={()=>{setActiveYear(y);setShowYearPicker(false);}} style={{display:"block",width:"100%",background:activeYear===y?T.accent:"transparent",color:activeYear===y?T.bg:T.text,border:"none",borderRadius:8,padding:"10px 20px",fontSize:14,fontWeight:600,cursor:"pointer",textAlign:"left",WebkitTapHighlightColor:"transparent"}}>{y}</button>)}
+                {YEARS.map(y=><button key={y} onClick={()=>{ setActiveYear(y); if(y===START_YEAR) setActiveMonth(m=>MONTHS.indexOf(m)<START_MONTH_IDX?START_MONTH:m); setShowYearPicker(false); }} style={{display:"block",width:"100%",background:activeYear===y?T.accent:"transparent",color:activeYear===y?T.bg:T.text,border:"none",borderRadius:8,padding:"10px 20px",fontSize:14,fontWeight:600,cursor:"pointer",textAlign:"left",WebkitTapHighlightColor:"transparent"}}>{y}</button>)}
               </div>
             )}
             {!isMobile&&TABS.map(t=>(
@@ -479,7 +488,7 @@ export default function App() {
       {/* Month strip */}
       <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
         <div style={{display:"flex",gap:6,padding:`8px ${p}px`,minWidth:"max-content"}}>
-          {MONTHS.map(m=>{
+          {getVisibleMonths(activeYear).map(m=>{
             const has=getTxns(m,activeYear).length>0;
             return <button key={m} onClick={()=>setActiveMonth(m)} style={{background:activeMonth===m?T.accent:has?T.accentDim:"transparent",color:activeMonth===m?T.bg:has?T.accent:T.muted,border:`1px solid ${activeMonth===m?T.accent:has?T.accent+"55":T.border}`,borderRadius:8,padding:"6px 14px",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",WebkitTapHighlightColor:"transparent"}}>{m}</button>;
           })}
@@ -506,7 +515,7 @@ export default function App() {
                 {label:"Variable",val:summary.variable,prev:prevSummary.variable,color:varStatus,icon:"📊"},
                 {label:"Balance",val:currentBalance,color:currentBalance>=0?T.green:T.rose,icon:"💰"},
               ].map((k,i)=>{
-                const delta=k.prev!=null&&k.prev>0?Math.round(((k.val-k.prev)/k.prev)*100):null;
+                const delta=(!isFirstTrackedMonth)&&k.prev!=null&&k.prev>0?Math.round(((k.val-k.prev)/k.prev)*100):null;
                 return(
                   <Card key={k.label} style={{padding:"14px",gridColumn:isMobile&&i===4?"span 2":"auto"}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
@@ -991,7 +1000,7 @@ function CreditCardsTab({s,upd,transactions,getTxns,activeMonth,setActiveMonth,a
       </div>
 
       <div style={{display:"flex",gap:5,overflowX:"auto",WebkitOverflowScrolling:"touch",paddingBottom:2}}>
-        {MONTHS.map(m=>{
+        {getVisibleMonths(activeYear).map(m=>{
           const has=transactions.filter(t=>t.category==="CC PAYMENT"&&t.date.startsWith(`${activeYear}-${mNum(m)}`)).length>0;
           return <button key={m} onClick={()=>setActiveMonth(m)} style={{background:activeMonth===m?T.rose:"transparent",color:activeMonth===m?T.bg:has?T.rose:T.muted,border:`1px solid ${activeMonth===m?T.rose:has?T.rose+"55":T.border}`,borderRadius:7,padding:"4px 12px",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",WebkitTapHighlightColor:"transparent"}}>{m}</button>;
         })}
