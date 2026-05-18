@@ -350,6 +350,7 @@ export default function App() {
   const isRemote=useRef(false);
   const saveTimer=useRef(null);
   const yearPickerRef=useRef(null);
+  const isSavingRef=useRef(false); // sync ref — beforeunload can read without React re-render
 
   useEffect(()=>{
     const unsub=onSnapshot(FIRESTORE_DOC,(snap)=>{
@@ -362,17 +363,50 @@ export default function App() {
     return unsub;
   },[]);
 
+  // ── Save helpers ──────────────────────────────────────────────────────────
+  // saveNow: immediate write — use for ALL discrete user actions so refresh never loses data
+  const saveNow = useCallback((newState) => {
+    clearTimeout(saveTimer.current);
+    isSavingRef.current = true;
+    setSyncStatus("saving");
+    setDoc(FIRESTORE_DOC, newState)
+      .then(() => { isSavingRef.current = false; setSyncStatus("live"); })
+      .catch(() => { isSavingRef.current = false; setSyncStatus("error"); });
+  }, []);
+
+  // saveSoon: debounced 400ms — use for rapid-typing fields (budget numbers, labels)
+  const saveSoon = useCallback((newState) => {
+    clearTimeout(saveTimer.current);
+    isSavingRef.current = true;
+    setSyncStatus("saving");
+    saveTimer.current = setTimeout(() => {
+      setDoc(FIRESTORE_DOC, newState)
+        .then(() => { isSavingRef.current = false; setSyncStatus("live"); })
+        .catch(() => { isSavingRef.current = false; setSyncStatus("error"); });
+    }, 400);
+  }, []);
+
+  // Debounced-save effect for plan/settings changes via upd()
   useEffect(()=>{
     if(!loaded) return;
     if(isRemote.current){ isRemote.current=false; return; }
     if(syncStatus==="connecting") return;
-    clearTimeout(saveTimer.current);
-    setSyncStatus("saving");
-    saveTimer.current=setTimeout(()=>{
-      setDoc(FIRESTORE_DOC,s).then(()=>setSyncStatus("live")).catch(()=>setSyncStatus("error"));
-    },1000);
+    saveSoon(s);
   },[s]);
 
+  // Warn user if they try to refresh/navigate away with unsaved changes
+  useEffect(()=>{
+    const handler = e => {
+      if(isSavingRef.current){ // use ref — reads synchronously without waiting for React state
+        e.preventDefault();
+        e.returnValue="Saving your data — please wait a moment before refreshing.";
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return ()=>window.removeEventListener("beforeunload", handler);
+  },[]); // no deps — handler always reads latest ref value
+
+  // upd: for plan/settings changes — goes through debounced path
   const upd=useCallback(patch=>setS(p=>({...p,...patch})),[]);
 
   const [tab,setTab]=useState("dashboard");
@@ -416,14 +450,36 @@ export default function App() {
   const varPct=s.variableBudget>0?Math.round((summary.variable/s.variableBudget)*100):0;
   const varStatus=varPct>=100?T.rose:varPct>=80?T.amber:T.green;
 
-  // FIX: validate amount is a positive number
-  const addTxn=form=>{
+  // Transaction actions — saveNow() so refresh NEVER loses data
+  const addTxn=useCallback(form=>{
     const amt=parseFloat(form.amount);
     if(!form.spentOn||!(amt>0)) return;
-    upd({transactions:[...(s.transactions||[]),{...form,id:uid(),amount:amt,tags:form.tags||[]}]});
-  };
-  const delTxn=id=>{ if(confirmDel((s.transactions||[]).find(t=>t.id===id)?.spentOn||"this")) upd({transactions:(s.transactions||[]).filter(t=>t.id!==id)}); };
-  const saveEditTxn=form=>{ upd({transactions:(s.transactions||[]).map(t=>t.id===form.id?{...form,amount:parseFloat(form.amount)||0}:t)}); setEditTxn(null); };
+    const newS={...s,transactions:[...(s.transactions||[]),{...form,id:uid(),amount:amt,tags:form.tags||[]}]};
+    setS(newS);
+    saveNow(newS); // immediate — no debounce
+  },[s,saveNow]);
+
+  const delTxn=useCallback(id=>{
+    const t=(s.transactions||[]).find(t=>t.id===id);
+    if(!t||!confirmDel(t.spentOn||"this")) return;
+    const newS={...s,transactions:(s.transactions||[]).filter(t=>t.id!==id)};
+    setS(newS);
+    saveNow(newS); // immediate
+  },[s,saveNow]);
+
+  const saveEditTxn=useCallback(form=>{
+    const newS={...s,transactions:(s.transactions||[]).map(t=>t.id===form.id?{...form,amount:parseFloat(form.amount)||0}:t)};
+    setS(newS);
+    setEditTxn(null);
+    saveNow(newS); // immediate
+  },[s,saveNow]);
+
+  // Also save opening balances and CC charges immediately (discrete user actions)
+  const updNow=useCallback(patch=>{
+    const newS={...s,...patch};
+    setS(newS);
+    saveNow(newS);
+  },[s,saveNow]);
 
   const annualData=useMemo(()=>getVisibleMonths(activeYear).map(m=>{
     const t=summarize(getTxns(m,activeYear));
@@ -500,7 +556,7 @@ export default function App() {
         {/* DASHBOARD */}
         {tab==="dashboard"&&(
           <div style={{display:"flex",flexDirection:"column",gap:isMobile?10:14}}>
-            <OpeningBalanceCard state={s} upd={upd} activeYear={activeYear} activeMonth={activeMonth}/>
+            <OpeningBalanceCard state={s} upd={updNow} activeYear={activeYear} activeMonth={activeMonth}/>
             {summary.variable>0&&(
               <div style={{background:varStatus+"15",border:`1px solid ${varStatus}44`,borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:10}}>
                 <div style={{width:8,height:8,borderRadius:"50%",background:varStatus,flexShrink:0}}/>
@@ -584,8 +640,8 @@ export default function App() {
         )}
 
         {tab==="transactions"&&<TransactionsTab s={s} addTxn={addTxn} delTxn={delTxn} editTxn={editTxn} setEditTxn={setEditTxn} saveEditTxn={saveEditTxn} activeMonth={activeMonth} setActiveMonth={setActiveMonth} activeYear={activeYear} getTxns={getTxns} summarize={summarize} isMobile={isMobile}/>}
-        {tab==="plan"&&<PlanTab s={s} upd={upd} totalIncome={totalIncome} totalFixed={totalFixed} totalSavings={totalSavings} transactions={s.transactions||[]} activeMonth={activeMonth} activeYear={activeYear} isMobile={isMobile}/>}
-        {tab==="credit cards"&&<CreditCardsTab s={s} upd={upd} transactions={s.transactions||[]} getTxns={getTxns} activeMonth={activeMonth} setActiveMonth={setActiveMonth} activeYear={activeYear} addTxn={addTxn} isMobile={isMobile}/>}
+        {tab==="plan"&&<PlanTab s={s} upd={upd} updNow={updNow} totalIncome={totalIncome} totalFixed={totalFixed} totalSavings={totalSavings} transactions={s.transactions||[]} activeMonth={activeMonth} activeYear={activeYear} isMobile={isMobile}/>}
+        {tab==="credit cards"&&<CreditCardsTab s={s} upd={upd} updNow={updNow} transactions={s.transactions||[]} getTxns={getTxns} activeMonth={activeMonth} setActiveMonth={setActiveMonth} activeYear={activeYear} addTxn={addTxn} isMobile={isMobile}/>}
       </div>
 
       <button onClick={()=>setShowQuickAdd(true)} style={{position:"fixed",bottom:isMobile?80:28,right:20,width:56,height:56,borderRadius:"50%",background:`linear-gradient(135deg,${T.accent},${T.purple})`,border:"none",color:"white",fontSize:28,cursor:"pointer",boxShadow:`0 4px 20px ${T.accent}66`,zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",WebkitTapHighlightColor:"transparent"}}>+</button>
@@ -716,7 +772,7 @@ function TransactionsTab({s,addTxn,delTxn,editTxn,setEditTxn,saveEditTxn,activeM
 }
 
 // ─── Plan Tab ──────────────────────────────────────────────────────────────────
-function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions,activeMonth,activeYear,isMobile}) {
+function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transactions,activeMonth,activeYear,isMobile}) {
   const [newIncome,setNewIncome]=useState({label:"",amount:""});
   const [newFixed,setNewFixed]=useState({label:"",budget:""});
   const [newVarCat,setNewVarCat]=useState("");
@@ -764,7 +820,7 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions,activeM
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
                 <input value={editVal.label||""} onChange={e=>setEditVal(v=>({...v,label:e.target.value}))} style={{...iSt,flex:1}}/>
                 <input type="number" value={editVal.amount||""} onChange={e=>setEditVal(v=>({...v,amount:+e.target.value}))} style={{...iSt,width:110,color:T.accent,fontWeight:700,textAlign:"right"}}/>
-                <button onClick={()=>{upd({income:(s.income||[]).map(i=>i.id===inc.id?{...i,...editVal}:i)});stopEdit();}} style={{background:T.accent,border:"none",color:T.bg,borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer"}}>✓</button>
+                <button onClick={()=>{updNow({income:(s.income||[]).map(i=>i.id===inc.id?{...i,...editVal}:i)});stopEdit();}} style={{background:T.accent,border:"none",color:T.bg,borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer"}}>✓</button>
                 <button onClick={stopEdit} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.muted,borderRadius:8,padding:"8px 12px",fontWeight:700,cursor:"pointer"}}>×</button>
               </div>
             ):(
@@ -774,7 +830,7 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions,activeM
                   <div style={{display:"flex",alignItems:"center",gap:10}}>
                     <span style={{fontWeight:700,color:T.accent}}>{fmt(inc.amount)}</span>
                     <button onClick={()=>{setEditId(inc.id);setEditVal({label:inc.label,amount:inc.amount});}} style={{background:"transparent",border:"none",color:T.blue,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>✏️</button>
-                    <button onClick={()=>{if(confirmDel(inc.label)) upd({income:(s.income||[]).filter(i=>i.id!==inc.id)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>🗑</button>
+                    <button onClick={()=>{if(confirmDel(inc.label)) updNow({income:(s.income||[]).filter(i=>i.id!==inc.id)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>🗑</button>
                   </div>
                 </div>
                 <ActualBar budget={inc.amount} actual={incomeActuals[inc.label]||0} color={T.accent}/>
@@ -785,7 +841,7 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions,activeM
         <div style={{display:"flex",gap:8}}>
           <input value={newIncome.label} onChange={e=>setNewIncome(v=>({...v,label:e.target.value}))} placeholder="Source name" style={{...iSt,flex:1}}/>
           <input type="number" value={newIncome.amount} onChange={e=>setNewIncome(v=>({...v,amount:e.target.value}))} placeholder="₹" style={{...iSt,width:90,textAlign:"right"}}/>
-          <button onClick={()=>{if(!newIncome.label||!newIncome.amount)return;upd({income:[...(s.income||[]),{id:uid(),label:newIncome.label,amount:+newIncome.amount}]});setNewIncome({label:"",amount:""}); }} style={{background:T.accent,border:"none",color:T.bg,borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13,whiteSpace:"nowrap"}}>+ Add</button>
+          <button onClick={()=>{if(!newIncome.label||!newIncome.amount)return;updNow({income:[...(s.income||[]),{id:uid(),label:newIncome.label,amount:+newIncome.amount}]});setNewIncome({label:"",amount:""}); }} style={{background:T.accent,border:"none",color:T.bg,borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13,whiteSpace:"nowrap"}}>+ Add</button>
         </div>
       </Card>
 
@@ -798,7 +854,7 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions,activeM
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
                 <input value={editVal.label||""} onChange={e=>setEditVal(v=>({...v,label:e.target.value}))} style={{...iSt,flex:1}}/>
                 <input type="number" value={editVal.budget||""} onChange={e=>setEditVal(v=>({...v,budget:+e.target.value}))} style={{...iSt,width:100,color:T.blue,fontWeight:700,textAlign:"right"}}/>
-                <button onClick={()=>{upd({fixedExpenses:(s.fixedExpenses||[]).map(f=>f.id===fe.id?{...f,...editVal}:f)});stopEdit();}} style={{background:T.accent,border:"none",color:T.bg,borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer"}}>✓</button>
+                <button onClick={()=>{updNow({fixedExpenses:(s.fixedExpenses||[]).map(f=>f.id===fe.id?{...f,...editVal}:f)});stopEdit();}} style={{background:T.accent,border:"none",color:T.bg,borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer"}}>✓</button>
                 <button onClick={stopEdit} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.muted,borderRadius:8,padding:"8px 12px",fontWeight:700,cursor:"pointer"}}>×</button>
               </div>
             ):(
@@ -808,7 +864,7 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions,activeM
                   <div style={{display:"flex",alignItems:"center",gap:10}}>
                     <span style={{fontWeight:700,color:T.blue}}>{fmt(fe.budget)}</span>
                     <button onClick={()=>{setEditId(fe.id);setEditVal({label:fe.label,budget:fe.budget});}} style={{background:"transparent",border:"none",color:T.blue,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>✏️</button>
-                    <button onClick={()=>{if(confirmDel(fe.label)) upd({fixedExpenses:(s.fixedExpenses||[]).filter(f=>f.id!==fe.id)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>🗑</button>
+                    <button onClick={()=>{if(confirmDel(fe.label)) updNow({fixedExpenses:(s.fixedExpenses||[]).filter(f=>f.id!==fe.id)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>🗑</button>
                   </div>
                 </div>
                 <ActualBar budget={fe.budget} actual={fixedActuals[fe.label]||0} color={T.blue}/>
@@ -819,7 +875,7 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions,activeM
         <div style={{display:"flex",gap:8}}>
           <input value={newFixed.label} onChange={e=>setNewFixed(v=>({...v,label:e.target.value}))} placeholder="Expense name" style={{...iSt,flex:1}}/>
           <input type="number" value={newFixed.budget} onChange={e=>setNewFixed(v=>({...v,budget:e.target.value}))} placeholder="₹" style={{...iSt,width:90,textAlign:"right"}}/>
-          <button onClick={()=>{if(!newFixed.label||!newFixed.budget)return;upd({fixedExpenses:[...(s.fixedExpenses||[]),{id:uid(),label:newFixed.label,budget:+newFixed.budget}]});setNewFixed({label:"",budget:""});}} style={{background:T.blue,border:"none",color:T.bg,borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13,whiteSpace:"nowrap"}}>+ Add</button>
+          <button onClick={()=>{if(!newFixed.label||!newFixed.budget)return;updNow({fixedExpenses:[...(s.fixedExpenses||[]),{id:uid(),label:newFixed.label,budget:+newFixed.budget}]});setNewFixed({label:"",budget:""});}} style={{background:T.blue,border:"none",color:T.bg,borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13,whiteSpace:"nowrap"}}>+ Add</button>
         </div>
         <div style={{paddingTop:12,marginTop:8,borderTop:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",fontWeight:800}}><span>Total Fixed Budget</span><span style={{color:T.blue}}>{fmt(totalFixed)}</span></div>
       </Card>
@@ -840,14 +896,14 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions,activeM
           {(s.variableSubCats||[]).map(cat=>(
             <div key={cat} style={{display:"flex",alignItems:"center",gap:4,background:T.amber+"18",border:`1px solid ${T.amber}44`,borderRadius:999,padding:"5px 12px 5px 14px"}}>
               <span style={{fontSize:13,color:T.amber,fontWeight:600}}>{cat}</span>
-              <button onClick={()=>{if(confirmDel(cat)) upd({variableSubCats:(s.variableSubCats||[]).filter(c=>c!==cat)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:16,padding:0,lineHeight:1,marginLeft:4,WebkitTapHighlightColor:"transparent"}}>×</button>
+              <button onClick={()=>{if(confirmDel(cat)) updNow({variableSubCats:(s.variableSubCats||[]).filter(c=>c!==cat)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:16,padding:0,lineHeight:1,marginLeft:4,WebkitTapHighlightColor:"transparent"}}>×</button>
             </div>
           ))}
         </div>
         <div style={{display:"flex",gap:8}}>
-          <input value={newVarCat} onChange={e=>setNewVarCat(e.target.value.toUpperCase())} placeholder="NEW CATEGORY" onKeyDown={e=>{if(e.key==="Enter"&&newVarCat.trim()&&!(s.variableSubCats||[]).includes(newVarCat.trim())){upd({variableSubCats:[...(s.variableSubCats||[]),newVarCat.trim()]});setNewVarCat("");}}} style={{...iSt,flex:1}}/>
+          <input value={newVarCat} onChange={e=>setNewVarCat(e.target.value.toUpperCase())} placeholder="NEW CATEGORY" onKeyDown={e=>{if(e.key==="Enter"&&newVarCat.trim()&&!(s.variableSubCats||[]).includes(newVarCat.trim())){updNow({variableSubCats:[...(s.variableSubCats||[]),newVarCat.trim()]});setNewVarCat("");}}} style={{...iSt,flex:1}}/>
           {/* FIX: prevent duplicate sub-categories */}
-          <button onClick={()=>{const v=newVarCat.trim();if(!v||(s.variableSubCats||[]).includes(v))return;upd({variableSubCats:[...(s.variableSubCats||[]),v]});setNewVarCat("");}} style={{background:T.amber,border:"none",color:T.bg,borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13,whiteSpace:"nowrap"}}>+ Add</button>
+          <button onClick={()=>{const v=newVarCat.trim();if(!v||(s.variableSubCats||[]).includes(v))return;updNow({variableSubCats:[...(s.variableSubCats||[]),v]});setNewVarCat("");}} style={{background:T.amber,border:"none",color:T.bg,borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13,whiteSpace:"nowrap"}}>+ Add</button>
         </div>
       </Card>
 
@@ -869,7 +925,7 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions,activeM
                     <input type="number" value={editVal.goalTarget||""} onChange={e=>setEditVal(v=>({...v,goalTarget:+e.target.value}))} placeholder="Goal ₹" style={iSt}/>
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                    <button onClick={()=>{upd({savings:(s.savings||[]).map(s2=>s2.id===sv.id?{...s2,...editVal}:s2)});stopEdit();}} style={{background:T.accent,border:"none",color:T.bg,borderRadius:8,padding:"10px",fontWeight:700,cursor:"pointer"}}>Save</button>
+                    <button onClick={()=>{updNow({savings:(s.savings||[]).map(s2=>s2.id===sv.id?{...s2,...editVal}:s2)});stopEdit();}} style={{background:T.accent,border:"none",color:T.bg,borderRadius:8,padding:"10px",fontWeight:700,cursor:"pointer"}}>Save</button>
                     <button onClick={stopEdit} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.muted,borderRadius:8,padding:"10px",fontWeight:700,cursor:"pointer"}}>Cancel</button>
                   </div>
                 </div>
@@ -883,7 +939,7 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions,activeM
                     <div style={{display:"flex",gap:8,alignItems:"center"}}>
                       <span style={{fontSize:16,fontWeight:800,color:clr}}>{pct.toFixed(0)}%</span>
                       <button onClick={()=>{setEditId(sv.id);setEditVal({label:sv.label,monthlyTarget:sv.monthlyTarget,goalTarget:sv.goalTarget});}} style={{background:"transparent",border:"none",color:T.blue,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>✏️</button>
-                      <button onClick={()=>{if(confirmDel(sv.label)) upd({savings:(s.savings||[]).filter(s2=>s2.id!==sv.id)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>🗑</button>
+                      <button onClick={()=>{if(confirmDel(sv.label)) updNow({savings:(s.savings||[]).filter(s2=>s2.id!==sv.id)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>🗑</button>
                     </div>
                   </div>
                   <div style={{height:6,background:T.border,borderRadius:99,marginBottom:6}}><div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(90deg,${clr},${clr}99)`,borderRadius:99}}/></div>
@@ -903,7 +959,7 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions,activeM
             <input type="number" value={newSaving.monthlyTarget} onChange={e=>setNewSaving(v=>({...v,monthlyTarget:e.target.value}))} placeholder="Monthly ₹" style={iSt}/>
             <input type="number" value={newSaving.goalTarget} onChange={e=>setNewSaving(v=>({...v,goalTarget:e.target.value}))} placeholder="Total goal ₹" style={iSt}/>
           </div>
-          <button onClick={()=>{if(!newSaving.label||!newSaving.monthlyTarget)return;upd({savings:[...(s.savings||[]),{id:uid(),label:newSaving.label,monthlyTarget:+newSaving.monthlyTarget,goalTarget:+newSaving.goalTarget||0}]});setNewSaving({label:"",monthlyTarget:"",goalTarget:""});}} style={{background:T.purple,border:"none",color:T.bg,borderRadius:8,padding:"10px 20px",fontWeight:700,cursor:"pointer",fontSize:13,width:"100%"}}>+ Add Goal</button>
+          <button onClick={()=>{if(!newSaving.label||!newSaving.monthlyTarget)return;updNow({savings:[...(s.savings||[]),{id:uid(),label:newSaving.label,monthlyTarget:+newSaving.monthlyTarget,goalTarget:+newSaving.goalTarget||0}]});setNewSaving({label:"",monthlyTarget:"",goalTarget:""});}} style={{background:T.purple,border:"none",color:T.bg,borderRadius:8,padding:"10px 20px",fontWeight:700,cursor:"pointer",fontSize:13,width:"100%"}}>+ Add Goal</button>
         </div>
       </Card>
 
@@ -914,14 +970,14 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions,activeM
           {(s.customTags||[]).map(tag=>(
             <div key={tag} style={{display:"flex",alignItems:"center",gap:4,background:T.purple+"18",border:`1px solid ${T.purple}44`,borderRadius:999,padding:"5px 12px 5px 14px"}}>
               <span style={{fontSize:13,color:T.purple,fontWeight:600}}>{tag}</span>
-              <button onClick={()=>{if(confirmDel(tag)) upd({customTags:(s.customTags||[]).filter(t=>t!==tag)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:16,padding:0,lineHeight:1,marginLeft:4,WebkitTapHighlightColor:"transparent"}}>×</button>
+              <button onClick={()=>{if(confirmDel(tag)) updNow({customTags:(s.customTags||[]).filter(t=>t!==tag)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:16,padding:0,lineHeight:1,marginLeft:4,WebkitTapHighlightColor:"transparent"}}>×</button>
             </div>
           ))}
         </div>
         <div style={{display:"flex",gap:8}}>
           <input value={newTag} onChange={e=>setNewTag(e.target.value.toLowerCase())} placeholder="new tag" style={{...iSt,flex:1}}/>
           {/* FIX: prevent duplicate tags */}
-          <button onClick={()=>{const v=newTag.trim();if(!v||(s.customTags||[]).includes(v))return;upd({customTags:[...(s.customTags||[]),v]});setNewTag("");}} style={{background:T.purple,border:"none",color:T.bg,borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13,whiteSpace:"nowrap"}}>+ Add</button>
+          <button onClick={()=>{const v=newTag.trim();if(!v||(s.customTags||[]).includes(v))return;updNow({customTags:[...(s.customTags||[]),v]});setNewTag("");}} style={{background:T.purple,border:"none",color:T.bg,borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13,whiteSpace:"nowrap"}}>+ Add</button>
         </div>
       </Card>
     </div>
@@ -929,7 +985,7 @@ function PlanTab({s,upd,totalIncome,totalFixed,totalSavings,transactions,activeM
 }
 
 // ─── Credit Cards Tab ──────────────────────────────────────────────────────────
-function CreditCardsTab({s,upd,transactions,getTxns,activeMonth,setActiveMonth,activeYear,addTxn,isMobile}) {
+function CreditCardsTab({s,upd,updNow,transactions,getTxns,activeMonth,setActiveMonth,activeYear,addTxn,isMobile}) {
   const [showAddCard,setShowAddCard]=useState(false);
   const members=s.members||DEFAULTS.members;
   const [newCard,setNewCard]=useState({name:"",person:members[0],initialOutstanding:"",limit:""});
@@ -969,7 +1025,7 @@ function CreditCardsTab({s,upd,transactions,getTxns,activeMonth,setActiveMonth,a
 
   const updateCharges=(ccId,value)=>{
     const k=ccKey(ccId,activeYear,activeMonth);
-    upd({ccMonthlyCharges:{...(s.ccMonthlyCharges||{}),[k]:+value||0}});
+    updNow({ccMonthlyCharges:{...(s.ccMonthlyCharges||{}),[k]:+value||0}});
   };
 
   // Empty state
@@ -1023,7 +1079,7 @@ function CreditCardsTab({s,upd,transactions,getTxns,activeMonth,setActiveMonth,a
                     </div>
                     <div style={{fontSize:11,color:T.muted,background:T.surface,borderRadius:8,padding:"8px 12px"}}>💡 Starting debt = what you owed when you first started tracking this card</div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                      <button onClick={()=>{upd({creditCards:(s.creditCards||[]).map(c=>c.id===cc.id?{...c,...editCardVal}:c)});setEditCardId(null);}} style={{background:T.accent,border:"none",color:T.bg,borderRadius:8,padding:"10px",fontWeight:700,cursor:"pointer"}}>Save</button>
+                      <button onClick={()=>{updNow({creditCards:(s.creditCards||[]).map(c=>c.id===cc.id?{...c,...editCardVal}:c)});setEditCardId(null);}} style={{background:T.accent,border:"none",color:T.bg,borderRadius:8,padding:"10px",fontWeight:700,cursor:"pointer"}}>Save</button>
                       <button onClick={()=>setEditCardId(null)} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.muted,borderRadius:8,padding:"10px",fontWeight:700,cursor:"pointer"}}>Cancel</button>
                     </div>
                   </div>
@@ -1038,7 +1094,7 @@ function CreditCardsTab({s,upd,transactions,getTxns,activeMonth,setActiveMonth,a
               {editCardId!==cc.id&&(
                 <div style={{display:"flex",gap:8,flexShrink:0}}>
                   <button onClick={()=>{setEditCardId(cc.id);setEditCardVal({name:cc.name,initialOutstanding:cc.initialOutstanding||cc.outstanding||0,limit:cc.limit});}} style={{background:"transparent",border:"none",color:T.blue,cursor:"pointer",fontSize:20,padding:"4px",WebkitTapHighlightColor:"transparent"}}>✏️</button>
-                  <button onClick={()=>{if(confirmDel(cc.name)) upd({creditCards:(s.creditCards||[]).filter(c=>c.id!==cc.id)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:20,padding:"4px",WebkitTapHighlightColor:"transparent"}}>🗑</button>
+                  <button onClick={()=>{if(confirmDel(cc.name)) updNow({creditCards:(s.creditCards||[]).filter(c=>c.id!==cc.id)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:20,padding:"4px",WebkitTapHighlightColor:"transparent"}}>🗑</button>
                 </div>
               )}
             </div>
@@ -1121,7 +1177,7 @@ function CreditCardsTab({s,upd,transactions,getTxns,activeMonth,setActiveMonth,a
             <TI label="Credit Limit ₹" type="number" value={newCard.limit} onChange={v=>setNewCard(c=>({...c,limit:v}))} placeholder="0"/>
             <div style={{fontSize:11,color:T.muted,padding:"8px 12px",background:T.surface,borderRadius:8}}>💡 Enter your current debt once. Then log new monthly charges and payments — the balance auto-calculates.</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}}>
-              <button onClick={()=>{if(!newCard.name)return;upd({creditCards:[...(s.creditCards||[]),{id:uid(),name:newCard.name,person:newCard.person,initialOutstanding:+newCard.initialOutstanding||0,limit:+newCard.limit||0}]});setNewCard({name:"",person:members[0],initialOutstanding:"",limit:""});setShowAddCard(false);}} style={{background:T.accent,border:"none",color:T.bg,borderRadius:10,padding:"12px",fontWeight:700,cursor:"pointer"}}>Add Card</button>
+              <button onClick={()=>{if(!newCard.name)return;updNow({creditCards:[...(s.creditCards||[]),{id:uid(),name:newCard.name,person:newCard.person,initialOutstanding:+newCard.initialOutstanding||0,limit:+newCard.limit||0}]});setNewCard({name:"",person:members[0],initialOutstanding:"",limit:""});setShowAddCard(false);}} style={{background:T.accent,border:"none",color:T.bg,borderRadius:10,padding:"12px",fontWeight:700,cursor:"pointer"}}>Add Card</button>
               <button onClick={()=>setShowAddCard(false)} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.muted,borderRadius:10,padding:"12px",fontWeight:700,cursor:"pointer"}}>Cancel</button>
             </div>
           </div>
