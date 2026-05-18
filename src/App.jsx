@@ -365,13 +365,16 @@ export default function App() {
 
   // ── Save helpers ──────────────────────────────────────────────────────────
   // saveNow: immediate write — use for ALL discrete user actions so refresh never loses data
+  // Firestore rejects undefined values — strip them before every write
+  const cleanForDb = (obj) => JSON.parse(JSON.stringify(obj, (_, v) => v === undefined ? null : v));
+
   const saveNow = useCallback((newState) => {
     clearTimeout(saveTimer.current);
     isSavingRef.current = true;
     setSyncStatus("saving");
-    setDoc(FIRESTORE_DOC, newState)
+    setDoc(FIRESTORE_DOC, cleanForDb(newState))
       .then(() => { isSavingRef.current = false; setSyncStatus("live"); })
-      .catch(() => { isSavingRef.current = false; setSyncStatus("error"); });
+      .catch((e) => { isSavingRef.current = false; setSyncStatus("error"); console.error("Save error:", e); });
   }, []);
 
   // saveSoon: debounced 400ms — use for rapid-typing fields (budget numbers, labels)
@@ -380,9 +383,9 @@ export default function App() {
     isSavingRef.current = true;
     setSyncStatus("saving");
     saveTimer.current = setTimeout(() => {
-      setDoc(FIRESTORE_DOC, newState)
+      setDoc(FIRESTORE_DOC, cleanForDb(newState))
         .then(() => { isSavingRef.current = false; setSyncStatus("live"); })
-        .catch(() => { isSavingRef.current = false; setSyncStatus("error"); });
+        .catch((e) => { isSavingRef.current = false; setSyncStatus("error"); console.error("Save error:", e); });
     }, 400);
   }, []);
 
@@ -454,9 +457,17 @@ export default function App() {
   const addTxn=useCallback(form=>{
     const amt=parseFloat(form.amount);
     if(!form.spentOn||!(amt>0)) return;
-    const newS={...s,transactions:[...(s.transactions||[]),{...form,id:uid(),amount:amt,tags:form.tags||[]}]};
+    const txn={
+      ...form,
+      id:uid(),
+      amount:amt,
+      tags:form.tags||[],
+      ccId:form.ccId||null, // undefined → null so Firestore accepts it
+      note:form.note||"",
+    };
+    const newS={...s,transactions:[...(s.transactions||[]),txn]};
     setS(newS);
-    saveNow(newS); // immediate — no debounce
+    saveNow(newS);
   },[s,saveNow]);
 
   const delTxn=useCallback(id=>{
@@ -468,10 +479,11 @@ export default function App() {
   },[s,saveNow]);
 
   const saveEditTxn=useCallback(form=>{
-    const newS={...s,transactions:(s.transactions||[]).map(t=>t.id===form.id?{...form,amount:parseFloat(form.amount)||0}:t)};
+    const updated={...form,amount:parseFloat(form.amount)||0,ccId:form.ccId||null,note:form.note||""};
+    const newS={...s,transactions:(s.transactions||[]).map(t=>t.id===form.id?updated:t)};
     setS(newS);
     setEditTxn(null);
-    saveNow(newS); // immediate
+    saveNow(newS);
   },[s,saveNow]);
 
   // Also save opening balances and CC charges immediately (discrete user actions)
