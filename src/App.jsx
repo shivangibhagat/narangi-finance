@@ -132,6 +132,9 @@ function mergeData(data) {
   };
 }
 
+// Firestore rejects undefined values — strip them before every write (module-level, not recreated)
+const cleanForDb = (obj) => JSON.parse(JSON.stringify(obj, (_, v) => v === undefined ? null : v));
+
 // ─── UI Primitives ─────────────────────────────────────────────────────────────
 const Card = ({children,style={}}) => (
   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,padding:"16px 18px",...style}}>{children}</div>
@@ -365,9 +368,6 @@ export default function App() {
 
   // ── Save helpers ──────────────────────────────────────────────────────────
   // saveNow: immediate write — use for ALL discrete user actions so refresh never loses data
-  // Firestore rejects undefined values — strip them before every write
-  const cleanForDb = (obj) => JSON.parse(JSON.stringify(obj, (_, v) => v === undefined ? null : v));
-
   const saveNow = useCallback((newState) => {
     clearTimeout(saveTimer.current);
     isSavingRef.current = true;
@@ -1009,11 +1009,10 @@ function CreditCardsTab({s,upd,updNow,transactions,getTxns,activeMonth,setActive
   useEffect(()=>setPayForm(f=>f.ccId?{...f,date:`${activeYear}-${mNum(activeMonth)}-01`}:f),[activeYear,activeMonth]);
 
   const ccStats=useMemo(()=>(s.creditCards||[]).map(cc=>{
-    // Opening = balance at end of previous month (FIX: uses computeCCBalance correctly)
-    const prevMi=MONTHS.indexOf(activeMonth)-1;
-    const prevM=prevMi>=0?MONTHS[prevMi]:"Dec";
-    const prevY=prevMi>=0?activeYear:activeYear-1;
-    const openingBalance=computeCCBalance(cc,prevY,prevM,transactions,s.ccMonthlyCharges);
+    // Opening balance = balance at START of activeMonth
+    // computeCCBalance(cc, y, m) loops up to but NOT including month m
+    // so calling with activeMonth gives us: balance at end of (activeMonth-1) = opening of activeMonth ✅
+    const openingBalance=computeCCBalance(cc,activeYear,activeMonth,transactions,s.ccMonthlyCharges);
     const newCharges=(s.ccMonthlyCharges||{})[ccKey(cc.id,activeYear,activeMonth)]||0;
     const monthPayments=getTxns(activeMonth,activeYear).filter(t=>t.category==="CC PAYMENT"&&t.ccId===cc.id).reduce((a,t)=>a+t.amount,0);
     // FIX: closing can't go below 0
@@ -1035,9 +1034,16 @@ function CreditCardsTab({s,upd,updNow,transactions,getTxns,activeMonth,setActive
     setPayForm(f=>({...f,ccId:null,amount:"",note:""}));
   };
 
+  // Local debounce for CC charges — typing fires many times, debounce before saving
+  const chargesTimer=useRef(null);
   const updateCharges=(ccId,value)=>{
     const k=ccKey(ccId,activeYear,activeMonth);
-    updNow({ccMonthlyCharges:{...(s.ccMonthlyCharges||{}),[k]:+value||0}});
+    // Update UI state immediately via upd, save to Firebase after 600ms of no typing
+    upd({ccMonthlyCharges:{...(s.ccMonthlyCharges||{}),[k]:+value||0}});
+    clearTimeout(chargesTimer.current);
+    chargesTimer.current=setTimeout(()=>{
+      updNow({ccMonthlyCharges:{...(s.ccMonthlyCharges||{}),[k]:+value||0}});
+    },600);
   };
 
   // Empty state
