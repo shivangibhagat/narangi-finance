@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { db } from "./firebase";
+import * as XLSX from "xlsx";
+import { db, auth, googleProvider } from "./firebase";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
 
 const FIRESTORE_DOC = doc(db, "narangi-finance", "shared-data");
 
@@ -343,9 +345,301 @@ function OpeningBalanceCard({state,upd,activeYear,activeMonth}) {
   );
 }
 
+
+// ─── Login Screen ──────────────────────────────────────────────────────────────
+function LoginScreen() {
+  const [loading,setLoading]=useState(false);
+  const [err,setErr]=useState("");
+  const login=async()=>{
+    setLoading(true); setErr("");
+    try{ await signInWithPopup(auth,googleProvider); }
+    catch(e){ setErr("Sign-in failed. Please try again."); setLoading(false); }
+  };
+  return(
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'DM Sans','Segoe UI',sans-serif",padding:24}}>
+      <div style={{textAlign:"center",maxWidth:360,width:"100%"}}>
+        <div style={{width:72,height:72,borderRadius:20,background:`linear-gradient(135deg,${T.accent},${T.purple})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:36,margin:"0 auto 20px"}}>🪙</div>
+        <div style={{fontWeight:800,fontSize:28,color:T.text,marginBottom:8}}>Narangi Finance</div>
+        <div style={{color:T.muted,fontSize:14,marginBottom:36}}>Your private family finance tracker</div>
+        <button onClick={login} disabled={loading} style={{
+          display:"flex",alignItems:"center",justifyContent:"center",gap:12,
+          width:"100%",padding:"14px 20px",background:T.card,
+          border:`1px solid ${T.border}`,borderRadius:14,
+          color:T.text,fontSize:15,fontWeight:700,cursor:"pointer",
+          WebkitTapHighlightColor:"transparent",
+          opacity:loading?0.6:1,
+        }}>
+          <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+          {loading ? "Signing in…" : "Sign in with Google"}
+        </button>
+        {err&&<div style={{color:T.rose,fontSize:13,marginTop:12}}>{err}</div>}
+        <div style={{color:T.muted,fontSize:12,marginTop:24}}>Your data is private and encrypted.<br/>Only your signed-in Google accounts can access it.</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Excel Import Modal ────────────────────────────────────────────────────────
+function ImportModal({open,onClose,s,onImport}) {
+  const [step,setStep]=useState("upload"); // upload → map → preview
+  const [wb,setWb]=useState(null);
+  const [sheetName,setSheetName]=useState("");
+  const [headers,setHeaders]=useState([]);
+  const [rows,setRows]=useState([]);
+  const [mapping,setMapping]=useState({date:-1,category:-1,subCat:-1,spentOn:-1,amount:-1,person:-1,note:-1});
+  const [preview,setPreview]=useState([]);
+  const [importing,setImporting]=useState(false);
+  const [importDone,setImportDone]=useState(null);
+  const [dragOver,setDragOver]=useState(false);
+  const fileRef=useRef();
+
+  const reset=()=>{setStep("upload");setWb(null);setSheetName("");setHeaders([]);setRows([]);setPreview([]);setImportDone(null);setMapping({date:-1,category:-1,subCat:-1,spentOn:-1,amount:-1,person:-1,note:-1});};
+
+  const parseFile=file=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      try{
+        const workbook=XLSX.read(e.target.result,{type:"array",cellDates:true});
+        setWb(workbook);
+        loadSheet(workbook,workbook.SheetNames[0]);
+        setSheetName(workbook.SheetNames[0]);
+        setStep("map");
+      }catch(err){ alert("Could not read file. Please use .xlsx or .csv format."); }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const loadSheet=(workbook,sName)=>{
+    const ws=workbook.Sheets[sName];
+    const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
+    if(!data.length) return;
+    const hdrs=(data[0]||[]).map(h=>String(h||"").trim());
+    const dataRows=data.slice(1).filter(r=>r.some(c=>c!==null&&c!==""&&c!==undefined));
+    setHeaders(hdrs);
+    setRows(dataRows);
+    autoDetect(hdrs);
+  };
+
+  const autoDetect=hdrs=>{
+    const m={date:-1,category:-1,subCat:-1,spentOn:-1,amount:-1,person:-1,note:-1};
+    hdrs.forEach((h,i)=>{
+      const hl=h.toLowerCase().replace(/[^a-z]/g,"");
+      if(/date/.test(hl) && m.date===-1) m.date=i;
+      else if(/(category|cat)/.test(hl) && !/sub/.test(hl) && m.category===-1) m.category=i;
+      else if(/(subcat|subcategory|sub)/.test(hl) && m.subCat===-1) m.subCat=i;
+      else if(/(descr|spenton|spent|what|particular|detail|narrat|item)/.test(hl) && m.spentOn===-1) m.spentOn=i;
+      else if(/(amount|amt|rs|inr|rupee|money|value)/.test(hl) && m.amount===-1) m.amount=i;
+      else if(/(person|who|member|by|paid)/.test(hl) && m.person===-1) m.person=i;
+      else if(/(note|remark|comment|desc)/.test(hl) && m.note===-1) m.note=i;
+    });
+    setMapping(m);
+  };
+
+  const fmtDateCell=val=>{
+    if(!val && val!==0) return "";
+    if(val instanceof Date) return val.toISOString().slice(0,10);
+    if(typeof val==="string"){
+      // try common formats: DD-MM-YYYY, DD/MM/YYYY, YYYY-MM-DD
+      const s=val.trim();
+      const iso=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if(iso) return `${iso[1]}-${iso[2].padStart(2,"0")}-${iso[3].padStart(2,"0")}`;
+      const dmy=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+      if(dmy){
+        const y=dmy[3].length===2?`20${dmy[3]}`:dmy[3];
+        return `${y}-${dmy[2].padStart(2,"0")}-${dmy[1].padStart(2,"0")}`;
+      }
+      return s;
+    }
+    if(typeof val==="number"){
+      // Excel serial date
+      try{
+        const d=XLSX.SSF.parse_date_code(val);
+        return `${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`;
+      }catch{ return ""; }
+    }
+    return String(val);
+  };
+
+  const buildPreview=()=>{
+    const get=(row,idx)=>idx>=0&&idx<row.length?row[idx]:"";
+    const members=s.members||["NARR","SHIVU"];
+    return rows.map((row,ri)=>{
+      const dateStr=fmtDateCell(get(row,mapping.date));
+      const rawAmt=get(row,mapping.amount);
+      const amt=parseFloat(String(rawAmt).replace(/[₹,\s]/g,""))||0;
+      const rawCat=String(get(row,mapping.category)||"").trim().toUpperCase();
+      // Normalize category
+      const catMap={"INCOME":"INCOME","FIXED":"FIXED EXPENSES","FIXED EXPENSES":"FIXED EXPENSES","VARIABLE":"VARIABLE EXPENSES","VARIABLE EXPENSES":"VARIABLE EXPENSES","SAVING":"SAVINGS","SAVINGS":"SAVINGS","CC":"CC PAYMENT","CC PAYMENT":"CC PAYMENT"};
+      const category=catMap[rawCat]||catMap[rawCat.split(" ")[0]]||"VARIABLE EXPENSES";
+      const rawPerson=String(get(row,mapping.person)||"").trim().toUpperCase();
+      const person=members.find(m=>m.toUpperCase()===rawPerson)||members[0];
+      return {
+        _row:ri+2,
+        id:uid(),
+        date:dateStr,
+        category,
+        subCat:String(get(row,mapping.subCat)||"").trim(),
+        spentOn:String(get(row,mapping.spentOn)||"").trim(),
+        amount:amt,
+        person,
+        note:String(get(row,mapping.note)||"").trim(),
+        tags:[],
+        ccId:null,
+      };
+    }).filter(t=>t.spentOn&&t.amount>0&&t.date&&t.date.length>=8);
+  };
+
+  const goPreview=()=>{ setPreview(buildPreview()); setStep("preview"); };
+
+  const doImport=()=>{
+    setImporting(true);
+    // Deduplicate: skip transactions already in s.transactions (match on date+amount+spentOn)
+    const existing=new Set((s.transactions||[]).map(t=>`${t.date}|${t.amount}|${t.spentOn}`));
+    const newTxns=preview.filter(t=>!existing.has(`${t.date}|${t.amount}|${t.spentOn}`));
+    onImport(newTxns);
+    setImportDone({total:preview.length,added:newTxns.length,skipped:preview.length-newTxns.length});
+    setImporting(false);
+    setStep("done");
+  };
+
+  const FIELD_LABELS={date:"Date",category:"Category",subCat:"Sub-Category",spentOn:"Description",amount:"Amount",person:"Person",note:"Note"};
+  const REQUIRED=["date","spentOn","amount"];
+  const canPreview=REQUIRED.every(f=>mapping[f]>=0);
+
+  return(
+    <Modal open={open} onClose={()=>{reset();onClose();}} title="📥 Import from Excel">
+      {step==="upload"&&(
+        <div>
+          <div
+            onDragOver={e=>{e.preventDefault();setDragOver(true);}}
+            onDragLeave={()=>setDragOver(false)}
+            onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f)parseFile(f);}}
+            onClick={()=>fileRef.current.click()}
+            style={{border:`2px dashed ${dragOver?T.accent:T.border}`,borderRadius:14,padding:"40px 20px",textAlign:"center",cursor:"pointer",background:dragOver?T.accentDim:"transparent",transition:"all 0.2s"}}>
+            <div style={{fontSize:40,marginBottom:12}}>📊</div>
+            <div style={{fontWeight:700,fontSize:15,marginBottom:6}}>Drop your Excel file here</div>
+            <div style={{color:T.muted,fontSize:13}}>or click to browse</div>
+            <div style={{color:T.muted,fontSize:11,marginTop:8}}>.xlsx or .csv supported</div>
+          </div>
+          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:"none"}} onChange={e=>{if(e.target.files[0])parseFile(e.target.files[0]);}}/>
+          <div style={{marginTop:16,padding:"12px 14px",background:T.surface,borderRadius:10,fontSize:12,color:T.muted}}>
+            💡 Your Excel should have columns for: Date, Description, Amount, Category, Sub-Category, Person. Column names don't have to match exactly — we'll auto-detect them.
+          </div>
+        </div>
+      )}
+
+      {step==="map"&&(
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {wb&&wb.SheetNames.length>1&&(
+            <div>
+              <label style={{color:T.muted,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:6}}>Sheet</label>
+              <select value={sheetName} onChange={e=>{setSheetName(e.target.value);loadSheet(wb,e.target.value);}} style={{...iSty,fontSize:13,padding:"8px 10px"}}>
+                {wb.SheetNames.map(n=><option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+          )}
+          <div style={{fontSize:13,color:T.muted}}>Found <strong style={{color:T.text}}>{rows.length} rows</strong> and <strong style={{color:T.text}}>{headers.length} columns</strong>. Map your columns below:</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            {Object.entries(FIELD_LABELS).map(([field,label])=>(
+              <div key={field}>
+                <label style={{color:REQUIRED.includes(field)?T.text:T.muted,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:4}}>
+                  {label}{REQUIRED.includes(field)&&<span style={{color:T.rose}}> *</span>}
+                </label>
+                <select value={mapping[field]} onChange={e=>setMapping(m=>({...m,[field]:+e.target.value}))} style={{...iSty,fontSize:13,padding:"7px 10px"}}>
+                  <option value={-1}>— skip —</option>
+                  {headers.map((h,i)=><option key={i} value={i}>{h||`Column ${i+1}`}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+          {/* Preview first 3 rows */}
+          {rows.length>0&&(
+            <div style={{background:T.surface,borderRadius:10,padding:12,overflowX:"auto"}}>
+              <div style={{fontSize:11,color:T.muted,fontWeight:700,marginBottom:8}}>FIRST 3 ROWS PREVIEW</div>
+              <table style={{fontSize:11,color:T.muted,width:"100%",borderCollapse:"collapse"}}>
+                <thead>
+                  <tr>{headers.map((h,i)=><th key={i} style={{padding:"3px 8px",background:T.card,color:T.muted,textAlign:"left",whiteSpace:"nowrap"}}>{h||`Col ${i+1}`}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {rows.slice(0,3).map((row,ri)=>(
+                    <tr key={ri}>{headers.map((_,ci)=>(
+                      <td key={ci} style={{padding:"3px 8px",borderTop:`1px solid ${T.border}`,whiteSpace:"nowrap",maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",color:T.text}}>
+                        {row[ci] instanceof Date ? row[ci].toLocaleDateString() : String(row[ci]||"")}
+                      </td>
+                    ))}</tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:4}}>
+            <button onClick={()=>{reset();}} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.muted,borderRadius:10,padding:"11px",fontWeight:700,cursor:"pointer"}}>← Back</button>
+            <button onClick={goPreview} disabled={!canPreview} style={{background:canPreview?T.accent:T.border,color:canPreview?T.bg:T.muted,border:"none",borderRadius:10,padding:"11px",fontWeight:700,cursor:canPreview?"pointer":"default"}}>Preview Import →</button>
+          </div>
+          {!canPreview&&<div style={{fontSize:11,color:T.amber,textAlign:"center"}}>⚠️ Please map Date, Description, and Amount (marked with *)</div>}
+        </div>
+      )}
+
+      {step==="preview"&&(
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            {[
+              {label:"Transactions found",val:preview.length,color:T.accent},
+              {label:"Date range",val:preview.length?`${preview[preview.length-1]?.date?.slice(0,7)} → ${preview[0]?.date?.slice(0,7)}`:"—",color:T.muted,text:true},
+            ].map(k=>(
+              <div key={k.label} style={{background:T.surface,borderRadius:10,padding:"12px 14px",textAlign:"center"}}>
+                <div style={{fontSize:10,color:T.muted,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>{k.label}</div>
+                <div style={{fontSize:k.text?13:22,fontWeight:800,color:k.color}}>{k.val}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{fontSize:13,color:T.muted}}>First 5 transactions that will be imported:</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:240,overflowY:"auto"}}>
+            {preview.slice(0,5).map((t,i)=>(
+              <div key={i} style={{background:T.surface,borderRadius:8,padding:"10px 12px",display:"flex",justifyContent:"space-between",gap:10,alignItems:"center"}}>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.spentOn}</div>
+                  <div style={{fontSize:11,color:T.muted}}>{t.date} · {t.subCat||t.category} · {t.person}</div>
+                </div>
+                <div style={{fontSize:14,fontWeight:800,color:t.category==="INCOME"?T.accent:T.text,flexShrink:0}}>₹{Number(t.amount).toLocaleString("en-IN")}</div>
+              </div>
+            ))}
+            {preview.length>5&&<div style={{textAlign:"center",color:T.muted,fontSize:12}}>…and {preview.length-5} more</div>}
+          </div>
+          <div style={{padding:"10px 14px",background:T.accentDim,borderRadius:10,fontSize:12,color:T.accent}}>
+            ✅ Duplicate transactions (same date + amount + description already in app) will be skipped automatically.
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <button onClick={()=>setStep("map")} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.muted,borderRadius:10,padding:"11px",fontWeight:700,cursor:"pointer"}}>← Back</button>
+            <button onClick={doImport} disabled={importing||preview.length===0} style={{background:T.accent,color:T.bg,border:"none",borderRadius:10,padding:"11px",fontWeight:700,cursor:"pointer"}}>
+              {importing?"Importing…":`Import ${preview.length} transactions`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step==="done"&&importDone&&(
+        <div style={{textAlign:"center",padding:"20px 0"}}>
+          <div style={{fontSize:48,marginBottom:16}}>🎉</div>
+          <div style={{fontWeight:800,fontSize:18,color:T.accent,marginBottom:8}}>Import Complete!</div>
+          <div style={{color:T.muted,fontSize:14,marginBottom:24}}>
+            <div>✅ {importDone.added} transactions imported</div>
+            {importDone.skipped>0&&<div>⏭ {importDone.skipped} duplicates skipped</div>}
+          </div>
+          <button onClick={()=>{reset();onClose();}} style={{background:T.accent,color:T.bg,border:"none",borderRadius:10,padding:"12px 32px",fontWeight:700,cursor:"pointer",fontSize:14}}>Done</button>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 // ─── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
   const isMobile=useIsMobile();
+  // Auth state — must be before s so hooks always run in same order
+  const [user,setUser]=useState(null);
+  const [authLoading,setAuthLoading]=useState(true);
+  useEffect(()=>{ return onAuthStateChanged(auth,u=>{ setUser(u); setAuthLoading(false); }); },[]);
   // s starts as DEFAULTS so hooks always run — never null (fixes React error #310)
   const [s,setS]=useState({...DEFAULTS,transactions:SEED});
   const [loaded,setLoaded]=useState(false);
@@ -420,6 +714,7 @@ export default function App() {
   const [activeMonth,setActiveMonth]=useState("May");
   const [showQuickAdd,setShowQuickAdd]=useState(false);
   const [showYearPicker,setShowYearPicker]=useState(false);
+  const [showImport,setShowImport]=useState(false);
   const [editTxn,setEditTxn]=useState(null);
   const defaultDate=`${activeYear}-${mNum(activeMonth)}-01`;
   const [quickForm,setQuickForm]=useState({date:defaultDate,category:"VARIABLE EXPENSES",subCat:"CAFES/RESTAURANTS",spentOn:"",amount:"",person:"NARR",note:"",tags:[]});
@@ -513,6 +808,18 @@ export default function App() {
   const TABS=[{id:"dashboard",icon:"📊",label:"Dashboard"},{id:"transactions",icon:"📋",label:"Txns"},{id:"plan",icon:"🎯",label:"Plan"},{id:"credit cards",icon:"💳",label:"Cards"}];
   const p=isMobile?12:24;
 
+  // Auth screens — all hooks already called above
+  if(authLoading) return(
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'DM Sans','Segoe UI',sans-serif"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,color:T.muted}}>
+        <div style={{width:6,height:6,borderRadius:"50%",background:T.accent,animation:"pulse 1s infinite"}}/>
+        <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}`}</style>
+        <span style={{fontSize:14}}>Loading…</span>
+      </div>
+    </div>
+  );
+  if(!user) return <LoginScreen/>;
+
   // Loading screen shown inside JSX — all hooks already called above
   if(!loaded) return(
     <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,fontFamily:"'DM Sans','Segoe UI',sans-serif"}}>
@@ -552,6 +859,10 @@ export default function App() {
             {!isMobile&&TABS.map(t=>(
               <button key={t.id} onClick={()=>setTab(t.id)} style={{background:tab===t.id?T.accent:"transparent",color:tab===t.id?T.bg:T.muted,border:`1px solid ${tab===t.id?T.accent:T.border}`,borderRadius:8,padding:"7px 14px",fontSize:13,fontWeight:700,cursor:"pointer"}}>{t.label}</button>
             ))}
+            {/* Sign out */}
+            <button onClick={()=>signOut(auth)} title={`Signed in as ${user?.email}`} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.muted,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:600,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>
+              {isMobile?"👤":`👤 ${user?.displayName?.split(" ")[0]||"Sign out"}`}
+            </button>
           </div>
         </div>
       </div>
@@ -654,7 +965,7 @@ export default function App() {
           </div>
         )}
 
-        {tab==="transactions"&&<TransactionsTab s={s} addTxn={addTxn} delTxn={delTxn} editTxn={editTxn} setEditTxn={setEditTxn} saveEditTxn={saveEditTxn} activeMonth={activeMonth} setActiveMonth={setActiveMonth} activeYear={activeYear} getTxns={getTxns} summarize={summarize} isMobile={isMobile}/>}
+        {tab==="transactions"&&<TransactionsTab s={s} addTxn={addTxn} delTxn={delTxn} editTxn={editTxn} setEditTxn={setEditTxn} saveEditTxn={saveEditTxn} activeMonth={activeMonth} setActiveMonth={setActiveMonth} activeYear={activeYear} getTxns={getTxns} summarize={summarize} isMobile={isMobile} onOpenImport={()=>setShowImport(true)}/>}
         {tab==="plan"&&<PlanTab s={s} upd={upd} updNow={updNow} totalIncome={totalIncome} totalFixed={totalFixed} totalSavings={totalSavings} transactions={s.transactions||[]} activeMonth={activeMonth} activeYear={activeYear} isMobile={isMobile}/>}
         {tab==="credit cards"&&<CreditCardsTab s={s} upd={upd} updNow={updNow} transactions={s.transactions||[]} getTxns={getTxns} activeMonth={activeMonth} setActiveMonth={setActiveMonth} activeYear={activeYear} addTxn={addTxn} isMobile={isMobile}/>}
       </div>
@@ -667,6 +978,10 @@ export default function App() {
       <Modal open={!!editTxn} onClose={()=>setEditTxn(null)} title="✏️ Edit Transaction">
         {editTxn&&<TxnForm state={s} value={editTxn} onChange={setEditTxn} onSubmit={()=>saveEditTxn(editTxn)} submitLabel="Save Changes"/>}
       </Modal>
+      <ImportModal open={showImport} onClose={()=>setShowImport(false)} s={s} onImport={txns=>{
+        const newS={...s,transactions:[...(s.transactions||[]),...txns]};
+        setS(newS); saveNow(newS);
+      }}/>
 
       {isMobile&&(
         <div style={{position:"fixed",bottom:0,left:0,right:0,background:T.surface,borderTop:`1px solid ${T.border}`,display:"flex",zIndex:300,paddingBottom:"env(safe-area-inset-bottom)"}}>
@@ -684,7 +999,7 @@ export default function App() {
 }
 
 // ─── Transactions Tab ──────────────────────────────────────────────────────────
-function TransactionsTab({s,addTxn,delTxn,editTxn,setEditTxn,saveEditTxn,activeMonth,setActiveMonth,activeYear,getTxns,summarize,isMobile}) {
+function TransactionsTab({s,addTxn,delTxn,editTxn,setEditTxn,saveEditTxn,activeMonth,setActiveMonth,activeYear,getTxns,summarize,isMobile,onOpenImport}) {
   const [showForm,setShowForm]=useState(false);
   const [form,setForm]=useState({date:`${activeYear}-${mNum(activeMonth)}-01`,category:"VARIABLE EXPENSES",subCat:(s.variableSubCats||[])[0]||"",spentOn:"",amount:"",person:(s.members||DEFAULTS.members)[0],note:"",tags:[]});
   const [filter,setFilter]=useState("ALL");
@@ -720,9 +1035,11 @@ function TransactionsTab({s,addTxn,delTxn,editTxn,setEditTxn,saveEditTxn,activeM
         ))}
       </div>
 
-      {isMobile?(
-        <Btn full onClick={()=>setShowForm(true)} style={{padding:"14px"}}>➕ Add Transaction</Btn>
-      ):(
+      <div style={{display:"flex",gap:10}}>
+        {isMobile&&<Btn full onClick={()=>setShowForm(true)} style={{padding:"14px",flex:1}}>➕ Add Transaction</Btn>}
+        <Btn full={isMobile} variant="outline" color={T.purple} onClick={onOpenImport} style={{padding:isMobile?"14px":"11px 20px"}}>📥 Import Excel</Btn>
+      </div>
+      {!isMobile&&(
         <Card>
           <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>➕ Add Transaction</div>
           <TxnForm state={s} value={form} onChange={setForm} onSubmit={()=>{addTxn(form);setForm(f=>({...f,spentOn:"",amount:"",note:"",tags:[]}));}}/>

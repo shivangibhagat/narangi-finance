@@ -1,9 +1,9 @@
 // ─── FILL IN YOUR FIREBASE CONFIG HERE ───────────────────────────────────────
 // Get these values from: Firebase Console → Project Settings → Your Apps → SDK setup
-// See README.md for step-by-step instructions
 
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD1yZn-gUSKYJH-rLHjz0VLvW2L0HrUG9U",
@@ -16,3 +16,5 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
+export const auth = getAuth(app);
+export const googleProvider = new GoogleAuthProvider();
