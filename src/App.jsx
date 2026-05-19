@@ -354,12 +354,13 @@ export default function App() {
   const saveTimer=useRef(null);
   const yearPickerRef=useRef(null);
   const isSavingRef=useRef(false); // sync ref — beforeunload can read without React re-render
+  const isManualSave=useRef(false); // prevents double-save: saveNow sets this, useEffect([s]) skips saveSoon
 
   useEffect(()=>{
     const unsub=onSnapshot(FIRESTORE_DOC,(snap)=>{
       isRemote.current=true;
       if(snap.exists()) setS(mergeData(snap.data()));
-      else { const init={...DEFAULTS,transactions:SEED}; setDoc(FIRESTORE_DOC,init); setS(init); }
+      else { const init={...DEFAULTS,transactions:SEED}; setDoc(FIRESTORE_DOC,cleanForDb(init)); setS(init); }
       setSyncStatus("live");
       setLoaded(true);
     },()=>{ setSyncStatus("error"); setLoaded(true); });
@@ -370,6 +371,7 @@ export default function App() {
   // saveNow: immediate write — use for ALL discrete user actions so refresh never loses data
   const saveNow = useCallback((newState) => {
     clearTimeout(saveTimer.current);
+    isManualSave.current = true; // suppress the redundant saveSoon from useEffect([s])
     isSavingRef.current = true;
     setSyncStatus("saving");
     setDoc(FIRESTORE_DOC, cleanForDb(newState))
@@ -393,6 +395,7 @@ export default function App() {
   useEffect(()=>{
     if(!loaded) return;
     if(isRemote.current){ isRemote.current=false; return; }
+    if(isManualSave.current){ isManualSave.current=false; return; } // saveNow already handled this
     if(syncStatus==="connecting") return;
     saveSoon(s);
   },[s]);
