@@ -34,6 +34,8 @@ cp .env.example .env
 ```
 Fill each `VITE_FIREBASE_*` variable in `.env` from your Firebase web app config.
 
+**Important:** use `KEY=value` with no space after `=` (wrong: `KEY= "value"` → `auth/invalid-api-key`). Restart the dev server after editing `.env`.
+
 ---
 
 ## Project structure

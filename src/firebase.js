@@ -2,18 +2,25 @@ import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+// Trim values — spaces/quotes in .env (e.g. KEY= "value") break auth with invalid-api-key
+const env = (key) => {
+  const raw = import.meta.env[key];
+  if (raw == null || raw === "") return "";
+  return String(raw).trim().replace(/^["']|["']$/g, "");
 };
 
-if ((!firebaseConfig.apiKey || !firebaseConfig.projectId) && import.meta.env.DEV) {
+const firebaseConfig = {
+  apiKey: env("VITE_FIREBASE_API_KEY"),
+  authDomain: env("VITE_FIREBASE_AUTH_DOMAIN"),
+  projectId: env("VITE_FIREBASE_PROJECT_ID"),
+  storageBucket: env("VITE_FIREBASE_STORAGE_BUCKET"),
+  messagingSenderId: env("VITE_FIREBASE_MESSAGING_SENDER_ID"),
+  appId: env("VITE_FIREBASE_APP_ID"),
+};
+
+if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
   throw new Error(
-    "Missing Firebase config. Copy .env.example to .env and fill in your Firebase web app keys."
+    "Missing Firebase config. Copy .env.example to .env, paste your web app keys (no spaces after =), then restart npm run dev."
   );
 }
 
