@@ -1,18 +1,21 @@
-// ─── FILL IN YOUR FIREBASE CONFIG HERE ───────────────────────────────────────
-// Get these values from: Firebase Console → Project Settings → Your Apps → SDK setup
-
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyD1yZn-gUSKYJH-rLHjz0VLvW2L0HrUG9U",
-  authDomain: "narangi-finance.firebaseapp.com",
-  projectId: "narangi-finance",
-  storageBucket: "narangi-finance.firebasestorage.app",
-  messagingSenderId: "1068286469090",
-  appId: "1:1068286469090:web:9eb99166e42cd00392cfbb"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
+
+if ((!firebaseConfig.apiKey || !firebaseConfig.projectId) && import.meta.env.DEV) {
+  throw new Error(
+    "Missing Firebase config. Copy .env.example to .env and fill in your Firebase web app keys."
+  );
+}
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);

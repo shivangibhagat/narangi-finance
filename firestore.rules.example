@@ -1,0 +1,13 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Shared family document — restrict to your Google accounts (replace emails).
+    match /narangi-finance/{docId} {
+      allow read, write: if request.auth != null
+        && request.auth.token.email in [
+          "shiv112995@gmail.com",
+          "narangi2202@gmail.com"
+        ];
+    }
+  }
+}
