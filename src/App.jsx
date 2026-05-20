@@ -3,7 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import * as XLSX from "xlsx";
 import { db, auth, googleProvider } from "./firebase";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
-import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
+import { onAuthStateChanged, signInWithRedirect, getRedirectResult, signOut } from "firebase/auth";
 
 const FIRESTORE_DOC = doc(db, "narangi-finance", "shared-data");
 
@@ -350,10 +350,15 @@ function OpeningBalanceCard({state,upd,activeYear,activeMonth}) {
 function LoginScreen() {
   const [loading,setLoading]=useState(false);
   const [err,setErr]=useState("");
-  const login=async()=>{
+  // Handle returning from Google redirect (fires on page load after redirect)
+  useEffect(()=>{
+    getRedirectResult(auth)
+      .then(r=>{ if(r?.user) setLoading(false); })
+      .catch(e=>{ if(e.code!=="auth/no-current-user") setErr("Sign-in failed. Please try again."); setLoading(false); });
+  },[]);
+  const login=()=>{
     setLoading(true); setErr("");
-    try{ await signInWithPopup(auth,googleProvider); }
-    catch(e){ setErr("Sign-in failed. Please try again."); setLoading(false); }
+    signInWithRedirect(auth,googleProvider); // redirect is more reliable on mobile
   };
   return(
     <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'DM Sans','Segoe UI',sans-serif",padding:24}}>
@@ -469,8 +474,14 @@ function ImportModal({open,onClose,s,onImport}) {
       const amt=parseFloat(String(rawAmt).replace(/[₹,\s]/g,""))||0;
       const rawCat=String(get(row,mapping.category)||"").trim().toUpperCase();
       // Normalize category
+      const catNorm=rawCat.replace(/\s+/g," ").trim();
       const catMap={"INCOME":"INCOME","FIXED":"FIXED EXPENSES","FIXED EXPENSES":"FIXED EXPENSES","VARIABLE":"VARIABLE EXPENSES","VARIABLE EXPENSES":"VARIABLE EXPENSES","SAVING":"SAVINGS","SAVINGS":"SAVINGS","CC":"CC PAYMENT","CC PAYMENT":"CC PAYMENT"};
-      const category=catMap[rawCat]||catMap[rawCat.split(" ")[0]]||"VARIABLE EXPENSES";
+      let category=catMap[catNorm]||catMap[catNorm.split(" ")[0]]||"VARIABLE EXPENSES";
+      // Convert CC bill entries: Excel stores CC payments as VARIABLE EXPENSES / CREDIT CARD BILLS
+      const rawSubCatUpper=String(get(row,mapping.subCat)||"").trim().toUpperCase();
+      if(category==="VARIABLE EXPENSES"&&(rawSubCatUpper.includes("CREDIT CARD")||rawSubCatUpper.includes("CC BILL"))){
+        category="CC PAYMENT";
+      }
       const rawPerson=String(get(row,mapping.person)||"").trim().toUpperCase();
       const person=members.find(m=>m.toUpperCase()===rawPerson)||members[0];
       return {
@@ -478,7 +489,7 @@ function ImportModal({open,onClose,s,onImport}) {
         id:uid(),
         date:dateStr,
         category,
-        subCat:String(get(row,mapping.subCat)||"").trim(),
+        subCat:rawSubCatUpper||String(get(row,mapping.subCat)||"").trim(),
         spentOn:String(get(row,mapping.spentOn)||"").trim(),
         amount:amt,
         person,
@@ -650,16 +661,20 @@ export default function App() {
   const isSavingRef=useRef(false); // sync ref — beforeunload can read without React re-render
   const isManualSave=useRef(false); // prevents double-save: saveNow sets this, useEffect([s]) skips saveSoon
 
+  // ── Firestore listener — only when authenticated (required by security rules) ──
   useEffect(()=>{
+    if(!user){ setLoaded(false); return; } // no auth = no Firestore
+    setLoaded(false);
+    setSyncStatus("connecting");
     const unsub=onSnapshot(FIRESTORE_DOC,(snap)=>{
       isRemote.current=true;
       if(snap.exists()) setS(mergeData(snap.data()));
       else { const init={...DEFAULTS,transactions:SEED}; setDoc(FIRESTORE_DOC,cleanForDb(init)); setS(init); }
       setSyncStatus("live");
       setLoaded(true);
-    },()=>{ setSyncStatus("error"); setLoaded(true); });
+    },(err)=>{ console.error("Firestore:",err); setSyncStatus("error"); setLoaded(true); });
     return unsub;
-  },[]);
+  },[user?.uid]); // re-runs when user signs in/out
 
   // ── Save helpers ──────────────────────────────────────────────────────────
   // saveNow: immediate write — use for ALL discrete user actions so refresh never loses data
@@ -1035,10 +1050,19 @@ function TransactionsTab({s,addTxn,delTxn,editTxn,setEditTxn,saveEditTxn,activeM
         ))}
       </div>
 
-      <div style={{display:"flex",gap:10}}>
-        {isMobile&&<Btn full onClick={()=>setShowForm(true)} style={{padding:"14px",flex:1}}>➕ Add Transaction</Btn>}
-        <Btn full={isMobile} variant="outline" color={T.purple} onClick={onOpenImport} style={{padding:isMobile?"14px":"11px 20px"}}>📥 Import Excel</Btn>
-      </div>
+      {/* On mobile: two equal buttons side by side */}
+      {isMobile&&(
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <Btn full onClick={()=>setShowForm(true)} style={{padding:"12px",fontSize:13}}>➕ Add</Btn>
+          <Btn full variant="outline" color={T.purple} onClick={onOpenImport} style={{padding:"12px",fontSize:13}}>📥 Import</Btn>
+        </div>
+      )}
+      {/* On desktop: import button sits above the form card */}
+      {!isMobile&&(
+        <div style={{display:"flex",justifyContent:"flex-end"}}>
+          <Btn variant="outline" color={T.purple} onClick={onOpenImport} style={{marginBottom:4}}>📥 Import from Excel</Btn>
+        </div>
+      )}
       {!isMobile&&(
         <Card>
           <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>➕ Add Transaction</div>
@@ -1117,9 +1141,9 @@ function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transactions,
   const iSt={...iSty,fontSize:13,padding:"8px 10px"};
 
   const monthTxns=useMemo(()=>transactions.filter(t=>t.date.startsWith(`${activeYear}-${mNum(activeMonth)}`)),[transactions,activeMonth,activeYear]);
-  const fixedActuals=useMemo(()=>{ const m={}; monthTxns.filter(t=>t.category==="FIXED EXPENSES").forEach(t=>{m[t.subCat]=(m[t.subCat]||0)+t.amount;}); return m; },[monthTxns]);
+  const fixedActuals=useMemo(()=>{ const m={}; monthTxns.filter(t=>t.category==="FIXED EXPENSES").forEach(t=>{const k=t.subCat.trim().toUpperCase();m[k]=(m[k]||0)+t.amount;}); return m; },[monthTxns]); // UPPERCASE keys
   const varActual=useMemo(()=>monthTxns.filter(t=>t.category==="VARIABLE EXPENSES").reduce((a,t)=>a+t.amount,0),[monthTxns]);
-  const incomeActuals=useMemo(()=>{ const m={}; monthTxns.filter(t=>t.category==="INCOME").forEach(t=>{m[t.subCat]=(m[t.subCat]||0)+t.amount;}); return m; },[monthTxns]);
+  const incomeActuals=useMemo(()=>{ const m={}; monthTxns.filter(t=>t.category==="INCOME").forEach(t=>{const k=t.subCat.trim().toUpperCase();m[k]=(m[k]||0)+t.amount;}); return m; },[monthTxns]); // UPPERCASE keys
   const savingsProgress=useMemo(()=>{ const mp={}; transactions.filter(t=>t.category==="SAVINGS").forEach(t=>{mp[t.subCat]=(mp[t.subCat]||0)+t.amount;}); return mp; },[transactions]);
 
   return(
@@ -1165,7 +1189,7 @@ function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transactions,
                     <button onClick={()=>{if(confirmDel(inc.label)) updNow({income:(s.income||[]).filter(i=>i.id!==inc.id)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>🗑</button>
                   </div>
                 </div>
-                <ActualBar budget={inc.amount} actual={incomeActuals[inc.label]||0} color={T.accent}/>
+                <ActualBar budget={inc.amount} actual={incomeActuals[inc.label.trim().toUpperCase()]||0} color={T.accent}/>
               </>
             )}
           </div>
@@ -1199,7 +1223,7 @@ function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transactions,
                     <button onClick={()=>{if(confirmDel(fe.label)) updNow({fixedExpenses:(s.fixedExpenses||[]).filter(f=>f.id!==fe.id)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>🗑</button>
                   </div>
                 </div>
-                <ActualBar budget={fe.budget} actual={fixedActuals[fe.label]||0} color={T.blue}/>
+                <ActualBar budget={fe.budget} actual={fixedActuals[fe.label.trim().toUpperCase()]||0} color={T.blue}/>
               </>
             )}
           </div>
