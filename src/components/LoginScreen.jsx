@@ -1,20 +1,26 @@
-﻿import { useState, useEffect } from "react";
-import { signInWithRedirect, getRedirectResult } from "firebase/auth";
+﻿import { useState } from "react";
+import { signInWithPopup } from "firebase/auth";
 import { auth, googleProvider } from "../firebase";
 import { T } from "../constants/theme";
 
 export function LoginScreen() {
   const [loading,setLoading]=useState(false);
   const [err,setErr]=useState("");
-  // Handle returning from Google redirect (fires on page load after redirect)
-  useEffect(()=>{
-    getRedirectResult(auth)
-      .then(r=>{ if(r?.user) setLoading(false); })
-      .catch(e=>{ if(e.code!=="auth/no-current-user") setErr("Sign-in failed. Please try again."); setLoading(false); });
-  },[]);
-  const login=()=>{
-    setLoading(true); setErr("");
-    signInWithRedirect(auth,googleProvider); // redirect is more reliable on mobile
+  // signInWithPopup is used instead of signInWithRedirect — redirect flow loses
+  // the session in modern browsers (Chrome/Safari) due to third-party cookie
+  // restrictions; popup completes in the same tab context and is fully reliable.
+  const login = async () => {
+    setLoading(true);
+    setErr("");
+    try {
+      await signInWithPopup(auth, googleProvider);
+      // onAuthStateChanged in App.jsx will pick up the new user automatically
+    } catch (e) {
+      if (e.code !== "auth/popup-closed-by-user" && e.code !== "auth/cancelled-popup-request") {
+        setErr("Sign-in failed. Please try again.");
+      }
+      setLoading(false);
+    }
   };
   return(
     <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'DM Sans','Segoe UI',sans-serif",padding:24}}>
