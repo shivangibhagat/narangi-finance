@@ -19,7 +19,8 @@ export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transa
   const fixedActuals=useMemo(()=>{ const m={}; monthTxns.filter(t=>t.category==="FIXED EXPENSES").forEach(t=>{const k=t.subCat.trim().toUpperCase();m[k]=(m[k]||0)+t.amount;}); return m; },[monthTxns]); // UPPERCASE keys
   const varActual=useMemo(()=>monthTxns.filter(t=>t.category==="VARIABLE EXPENSES").reduce((a,t)=>a+t.amount,0),[monthTxns]);
   const incomeActuals=useMemo(()=>{ const m={}; monthTxns.filter(t=>t.category==="INCOME").forEach(t=>{const k=t.subCat.trim().toUpperCase();m[k]=(m[k]||0)+t.amount;}); return m; },[monthTxns]); // UPPERCASE keys
-  const savingsProgress=useMemo(()=>{ const mp={}; transactions.filter(t=>t.category==="SAVINGS").forEach(t=>{mp[t.subCat]=(mp[t.subCat]||0)+t.amount;}); return mp; },[transactions]);
+  const savingsProgress=useMemo(()=>{ const mp={}; monthTxns.filter(t=>t.category==="SAVINGS").forEach(t=>{mp[t.subCat]=(mp[t.subCat]||0)+t.amount;}); return mp; },[monthTxns]);
+  const savingsProgressAll=useMemo(()=>{ const mp={}; transactions.filter(t=>t.category==="SAVINGS").forEach(t=>{mp[t.subCat]=(mp[t.subCat]||0)+t.amount;}); return mp; },[transactions]);
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -142,7 +143,8 @@ export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transa
       <Card>
         <div style={{fontWeight:700,fontSize:14,color:T.purple,marginBottom:12}}>🎯 Savings Goals</div>
         {(s.savings||[]).map((sv,i)=>{
-          const contributed=savingsProgress[sv.label]||0;
+          const contributed=savingsProgressAll[sv.label]||0;
+          const monthContributed=savingsProgress[sv.label]||0;
           const pct=sv.goalTarget>0?Math.min(100,(contributed/sv.goalTarget)*100):0;
           const monthsLeft=sv.monthlyTarget>0&&sv.goalTarget>contributed?Math.ceil((sv.goalTarget-contributed)/sv.monthlyTarget):null;
           const clr=PIE_COLORS[i%PIE_COLORS.length];
@@ -166,6 +168,7 @@ export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transa
                     <div>
                       <div style={{fontWeight:700,fontSize:14,color:clr}}>{sv.label}</div>
                       <div style={{fontSize:11,color:T.muted,marginTop:3}}>{fmt(contributed)} of {fmt(sv.goalTarget)}{contributed>=sv.goalTarget?<span style={{color:T.green}}> · 🎉 Goal reached!</span>:monthsLeft?<span style={{color:T.amber}}> · {monthsLeft}mo left</span>:null}</div>
+                      {monthContributed>0&&<div style={{fontSize:10,color:T.muted,marginTop:2}}>This month: <span style={{color:clr,fontWeight:600}}>{fmt(monthContributed)}</span></div>}
                     </div>
                     <div style={{display:"flex",gap:8,alignItems:"center"}}>
                       <span style={{fontSize:16,fontWeight:800,color:clr}}>{pct.toFixed(0)}%</span>

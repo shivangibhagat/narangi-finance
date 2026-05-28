@@ -47,6 +47,8 @@ export default function App() {
   const [showYearPicker, setShowYearPicker] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [editTxn, setEditTxn] = useState(null);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef(null);
   const yearPickerRef = useRef(null);
 
   const defaultDate = `${activeYear}-${mNum(activeMonth)}-01`;
@@ -62,13 +64,17 @@ export default function App() {
   });
 
   useOutsideClick(yearPickerRef, useCallback(() => setShowYearPicker(false), []));
+  useOutsideClick(userMenuRef, useCallback(() => setShowUserMenu(false), []));
   useEffect(() => {
     setQuickForm((f) => ({ ...f, date: `${activeYear}-${mNum(activeMonth)}-01` }));
   }, [activeYear, activeMonth]);
 
   const members = s.members || DEFAULTS.members;
-  const getTxns = (m, y = activeYear) =>
-    (s.transactions || []).filter((t) => t.date.startsWith(`${y}-${mNum(m)}`));
+  const getTxns = useCallback(
+    (m, y = activeYear) =>
+      (s.transactions || []).filter((t) => t.date.startsWith(`${y}-${mNum(m)}`)),
+    [s.transactions, activeYear]
+  );
 
   const monthTxns = useMemo(
     () => getTxns(activeMonth, activeYear),
@@ -336,23 +342,75 @@ export default function App() {
                   {t.label}
                 </button>
               ))}
-            <button
-              onClick={() => signOut(auth)}
-              title={`Signed in as ${user?.email}`}
-              style={{
-                background: "transparent",
-                border: `1px solid ${T.border}`,
-                color: T.muted,
-                borderRadius: 8,
-                padding: "7px 12px",
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: "pointer",
-                WebkitTapHighlightColor: "transparent",
-              }}
-            >
-              {isMobile ? "👤" : `👤 ${user?.displayName?.split(" ")[0] || "Sign out"}`}
-            </button>
+            <div style={{ position: "relative" }} ref={userMenuRef}>
+              <button
+                onClick={() => setShowUserMenu((v) => !v)}
+                title={`Signed in as ${user?.email}`}
+                style={{
+                  background: "transparent",
+                  border: `1px solid ${T.border}`,
+                  color: T.muted,
+                  borderRadius: 8,
+                  padding: "7px 12px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  WebkitTapHighlightColor: "transparent",
+                }}
+              >
+                {isMobile ? "👤" : `👤 ${user?.displayName?.split(" ")[0] || "Account"}`}
+              </button>
+              {showUserMenu && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: isMobile ? 56 : 64,
+                    right: 0,
+                    background: T.card,
+                    border: `1px solid ${T.border}`,
+                    borderRadius: 12,
+                    padding: 0,
+                    zIndex: 300,
+                    boxShadow: "0 8px 32px #00000088",
+                    minWidth: 220,
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: "12px 16px",
+                      borderBottom: `1px solid ${T.border}`,
+                      fontSize: 12,
+                      color: T.muted,
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, color: T.text, marginBottom: 2 }}>
+                      {user?.displayName || "User"}
+                    </div>
+                    <div style={{ fontSize: 11 }}>{user?.email}</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      signOut(auth);
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "12px 16px",
+                      background: "transparent",
+                      border: "none",
+                      color: T.rose,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      textAlign: "left",
+                      WebkitTapHighlightColor: "transparent",
+                    }}
+                  >
+                    🚪 Sign Out
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
