@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { T, CATS, CAT_CLR, CAT_ICON } from "../constants/theme";
 import { DEFAULTS } from "../constants/defaults";
 import { fmt, mNum } from "../utils/format";
@@ -44,25 +44,25 @@ export function TransactionsTab({s,addTxn,delTxn,editTxn,setEditTxn,saveEditTxn,
       {/* On mobile: two equal buttons side by side */}
       {isMobile&&(
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          <Btn full onClick={()=>setShowForm(true)} style={{padding:"12px",fontSize:13}}>âž• Add</Btn>
-          <Btn full variant="outline" color={T.purple} onClick={onOpenImport} style={{padding:"12px",fontSize:13}}>ðŸ“¥ Import</Btn>
+          <Btn full onClick={()=>setShowForm(true)} style={{padding:"12px",fontSize:13}}>➕ Add</Btn>
+          <Btn full variant="outline" color={T.purple} onClick={onOpenImport} style={{padding:"12px",fontSize:13}}>📥 Import</Btn>
         </div>
       )}
       {/* On desktop: import button sits above the form card */}
       {!isMobile&&(
         <div style={{display:"flex",justifyContent:"flex-end"}}>
-          <Btn variant="outline" color={T.purple} onClick={onOpenImport} style={{marginBottom:4}}>ðŸ“¥ Import from Excel</Btn>
+          <Btn variant="outline" color={T.purple} onClick={onOpenImport} style={{marginBottom:4}}>📥 Import from Excel</Btn>
         </div>
       )}
       {!isMobile&&(
         <Card>
-          <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>âž• Add Transaction</div>
+          <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>➕ Add Transaction</div>
           <TxnForm state={s} value={form} onChange={setForm} onSubmit={()=>{addTxn(form);setForm(f=>({...f,spentOn:"",amount:"",note:"",tags:[]}));}}/>
         </Card>
       )}
 
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="ðŸ” Search description, category, note, tagsâ€¦" style={{...iSty,flex:1,minWidth:180,fontSize:13,padding:"9px 12px"}}/>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Search description, category, note, tags…" style={{...iSty,flex:1,minWidth:180,fontSize:13,padding:"9px 12px"}}/>
       </div>
       <div style={{display:"flex",gap:6,overflowX:"auto",WebkitOverflowScrolling:"touch",paddingBottom:2}}>
         {["ALL",...CATS].map(f=>(
@@ -78,17 +78,17 @@ export function TransactionsTab({s,addTxn,delTxn,editTxn,setEditTxn,saveEditTxn,
             const catClr=CAT_CLR[t.category]||T.muted;
             return isMobile?(
               <div key={t.id} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"14px 16px",display:"flex",alignItems:"center",gap:12}}>
-                <div style={{width:40,height:40,borderRadius:10,background:catClr+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{CAT_ICON[t.category]||"ðŸ“Œ"}</div>
+                <div style={{width:40,height:40,borderRadius:10,background:catClr+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{CAT_ICON[t.category]||"📌"}</div>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:14,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.spentOn}</div>
-                  <div style={{fontSize:11,color:T.muted,marginTop:2}}>{t.date.slice(5)} Â· <span style={{color:catClr}}>{t.subCat}</span> Â· <span style={{color:t.person===(s.members||[])[0]?T.accent:T.purple}}>{t.person}</span></div>
-                  {(t.note||(t.tags||[]).length>0)&&<div style={{fontSize:11,color:T.muted,marginTop:2}}>{t.note}{t.note&&(t.tags||[]).length>0?" Â· ":""}{(t.tags||[]).join(", ")}</div>}
+                  <div style={{fontSize:11,color:T.muted,marginTop:2}}>{t.date.slice(5)} · <span style={{color:catClr}}>{t.subCat}</span> · <span style={{color:t.person===(s.members||[])[0]?T.accent:T.purple}}>{t.person}</span></div>
+                  {(t.note||(t.tags||[]).length>0)&&<div style={{fontSize:11,color:T.muted,marginTop:2}}>{t.note}{t.note&&(t.tags||[]).length>0?" · ":""}{(t.tags||[]).join(", ")}</div>}
                 </div>
                 <div style={{textAlign:"right",flexShrink:0}}>
                   <div style={{fontSize:15,fontWeight:800,color:t.category==="INCOME"?T.accent:T.text}}>{fmt(t.amount)}</div>
                   <div style={{display:"flex",gap:6,justifyContent:"flex-end",marginTop:4}}>
-                    <button onClick={()=>setEditTxn({...t,amount:String(t.amount)})} style={{background:"transparent",border:"none",color:T.blue,cursor:"pointer",fontSize:16,padding:"2px",WebkitTapHighlightColor:"transparent"}}>âœï¸</button>
-                    <button onClick={()=>delTxn(t.id)} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:16,padding:"2px",WebkitTapHighlightColor:"transparent"}}>ðŸ—‘</button>
+                    <button onClick={()=>setEditTxn({...t,amount:String(t.amount)})} style={{background:"transparent",border:"none",color:T.blue,cursor:"pointer",fontSize:16,padding:"2px",WebkitTapHighlightColor:"transparent"}}>âœ️</button>
+                    <button onClick={()=>delTxn(t.id)} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:16,padding:"2px",WebkitTapHighlightColor:"transparent"}}>🗑</button>
                   </div>
                 </div>
               </div>
@@ -97,21 +97,21 @@ export function TransactionsTab({s,addTxn,delTxn,editTxn,setEditTxn,saveEditTxn,
                 <span style={{color:T.muted,fontSize:12}}>{t.date.slice(5)}</span>
                 <div>
                   <div style={{fontSize:13,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.spentOn}</div>
-                  {(t.note||(t.tags||[]).length>0)&&<div style={{fontSize:11,color:T.muted}}>{t.note}{t.note&&(t.tags||[]).length>0?" Â· ":""}{(t.tags||[]).join(", ")}</div>}
+                  {(t.note||(t.tags||[]).length>0)&&<div style={{fontSize:11,color:T.muted}}>{t.note}{t.note&&(t.tags||[]).length>0?" · ":""}{(t.tags||[]).join(", ")}</div>}
                 </div>
                 <Badge color={catClr}>{t.subCat}</Badge>
                 <span style={{fontWeight:700,color:t.category==="INCOME"?T.accent:T.text,textAlign:"right"}}>{fmt(t.amount)}</span>
                 <Badge color={t.person===(s.members||[])[0]?T.accent:T.purple} small>{t.person}</Badge>
                 <div style={{display:"flex",gap:6}}>
-                  <button onClick={()=>setEditTxn({...t,amount:String(t.amount)})} style={{background:"transparent",border:"none",color:T.blue,cursor:"pointer",fontSize:16,padding:"2px"}}>âœï¸</button>
-                  <button onClick={()=>delTxn(t.id)} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:16,padding:"2px"}}>ðŸ—‘</button>
+                  <button onClick={()=>setEditTxn({...t,amount:String(t.amount)})} style={{background:"transparent",border:"none",color:T.blue,cursor:"pointer",fontSize:16,padding:"2px"}}>âœ️</button>
+                  <button onClick={()=>delTxn(t.id)} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:16,padding:"2px"}}>🗑</button>
                 </div>
               </div>
             );
           })}
         </div>
       )}
-      <Modal open={showForm} onClose={()=>setShowForm(false)} title="âž• Add Transaction">
+      <Modal open={showForm} onClose={()=>setShowForm(false)} title="➕ Add Transaction">
         <TxnForm state={s} value={form} onChange={setForm} onSubmit={()=>{addTxn(form);setForm(f=>({...f,spentOn:"",amount:"",note:"",tags:[]}));setShowForm(false);}}/>
       </Modal>
     </div>

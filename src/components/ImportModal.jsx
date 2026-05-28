@@ -1,4 +1,4 @@
-﻿import { useState, useRef } from "react";
+import { useState, useRef } from "react";
 import * as XLSX from "xlsx";
 import { T } from "../constants/theme";
 import { resolveCcId } from "../utils/finance";
@@ -6,7 +6,7 @@ import { uid } from "../utils/format";
 import { Modal, iSty } from "./ui/primitives";
 
 export function ImportModal({open,onClose,s,onImport}) {
-  const [step,setStep]=useState("upload"); // upload â†’ map â†’ preview
+  const [step,setStep]=useState("upload"); // upload → map → preview
   const [wb,setWb]=useState(null);
   const [sheetName,setSheetName]=useState("");
   const [headers,setHeaders]=useState([]);
@@ -93,7 +93,7 @@ export function ImportModal({open,onClose,s,onImport}) {
     return rows.map((row,ri)=>{
       const dateStr=fmtDateCell(get(row,mapping.date));
       const rawAmt=get(row,mapping.amount);
-      const amt=parseFloat(String(rawAmt).replace(/[â‚¹,\s]/g,""))||0;
+      const amt=parseFloat(String(rawAmt).replace(/[₹,\s]/g,""))||0;
       const rawCat=String(get(row,mapping.category)||"").trim().toUpperCase();
       // Normalize category
       const catNorm=rawCat.replace(/\s+/g," ").trim();
@@ -143,7 +143,7 @@ export function ImportModal({open,onClose,s,onImport}) {
   const canPreview=REQUIRED.every(f=>mapping[f]>=0);
 
   return(
-    <Modal open={open} onClose={()=>{reset();onClose();}} title="ðŸ“¥ Import from Excel">
+    <Modal open={open} onClose={()=>{reset();onClose();}} title="📥 Import from Excel">
       {step==="upload"&&(
         <div>
           <div
@@ -152,7 +152,7 @@ export function ImportModal({open,onClose,s,onImport}) {
             onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f)parseFile(f);}}
             onClick={()=>fileRef.current.click()}
             style={{border:`2px dashed ${dragOver?T.accent:T.border}`,borderRadius:14,padding:"40px 20px",textAlign:"center",cursor:"pointer",background:dragOver?T.accentDim:"transparent",transition:"all 0.2s"}}>
-            <div style={{fontSize:40,marginBottom:12}}>ðŸ“Š</div>
+            <div style={{fontSize:40,marginBottom:12}}>📊</div>
             <div style={{fontWeight:700,fontSize:15,marginBottom:6}}>Drop your Excel file here</div>
             <div style={{color:T.muted,fontSize:13}}>or click to browse</div>
             <div style={{color:T.muted,fontSize:11,marginTop:8}}>.xlsx or .csv supported</div>
@@ -160,7 +160,7 @@ export function ImportModal({open,onClose,s,onImport}) {
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:"none"}} onChange={e=>{if(e.target.files[0])parseFile(e.target.files[0]);}}/>
           {importErr&&<div style={{marginTop:12,color:T.rose,fontSize:13,fontWeight:600}}>{importErr}</div>}
           <div style={{marginTop:16,padding:"12px 14px",background:T.surface,borderRadius:10,fontSize:12,color:T.muted}}>
-            ðŸ’¡ Your Excel should have columns for: Date, Description, Amount, Category, Sub-Category, Person. Column names don't have to match exactly â€” we'll auto-detect them.
+            💡 Your Excel should have columns for: Date, Description, Amount, Category, Sub-Category, Person. Column names don't have to match exactly — we'll auto-detect them.
           </div>
         </div>
       )}
@@ -183,7 +183,7 @@ export function ImportModal({open,onClose,s,onImport}) {
                   {label}{REQUIRED.includes(field)&&<span style={{color:T.rose}}> *</span>}
                 </label>
                 <select value={mapping[field]} onChange={e=>setMapping(m=>({...m,[field]:+e.target.value}))} style={{...iSty,fontSize:13,padding:"7px 10px"}}>
-                  <option value={-1}>â€” skip â€”</option>
+                  <option value={-1}>— skip —</option>
                   {headers.map((h,i)=><option key={i} value={i}>{h||`Column ${i+1}`}</option>)}
                 </select>
               </div>
@@ -211,9 +211,9 @@ export function ImportModal({open,onClose,s,onImport}) {
           )}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:4}}>
             <button onClick={()=>{reset();}} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.muted,borderRadius:10,padding:"11px",fontWeight:700,cursor:"pointer"}}>â† Back</button>
-            <button onClick={goPreview} disabled={!canPreview} style={{background:canPreview?T.accent:T.border,color:canPreview?T.bg:T.muted,border:"none",borderRadius:10,padding:"11px",fontWeight:700,cursor:canPreview?"pointer":"default"}}>Preview Import â†’</button>
+            <button onClick={goPreview} disabled={!canPreview} style={{background:canPreview?T.accent:T.border,color:canPreview?T.bg:T.muted,border:"none",borderRadius:10,padding:"11px",fontWeight:700,cursor:canPreview?"pointer":"default"}}>Preview Import →</button>
           </div>
-          {!canPreview&&<div style={{fontSize:11,color:T.amber,textAlign:"center"}}>âš ï¸ Please map Date, Description, and Amount (marked with *)</div>}
+          {!canPreview&&<div style={{fontSize:11,color:T.amber,textAlign:"center"}}>⚠️ Please map Date, Description, and Amount (marked with *)</div>}
         </div>
       )}
 
@@ -222,7 +222,7 @@ export function ImportModal({open,onClose,s,onImport}) {
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             {[
               {label:"Transactions found",val:preview.length,color:T.accent},
-              {label:"Date range",val:preview.length?`${preview[preview.length-1]?.date?.slice(0,7)} â†’ ${preview[0]?.date?.slice(0,7)}`:"â€”",color:T.muted,text:true},
+              {label:"Date range",val:preview.length?`${preview[preview.length-1]?.date?.slice(0,7)} → ${preview[0]?.date?.slice(0,7)}`:"—",color:T.muted,text:true},
             ].map(k=>(
               <div key={k.label} style={{background:T.surface,borderRadius:10,padding:"12px 14px",textAlign:"center"}}>
                 <div style={{fontSize:10,color:T.muted,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>{k.label}</div>
@@ -236,20 +236,20 @@ export function ImportModal({open,onClose,s,onImport}) {
               <div key={i} style={{background:T.surface,borderRadius:8,padding:"10px 12px",display:"flex",justifyContent:"space-between",gap:10,alignItems:"center"}}>
                 <div style={{minWidth:0}}>
                   <div style={{fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.spentOn}</div>
-                  <div style={{fontSize:11,color:T.muted}}>{t.date} Â· {t.subCat||t.category} Â· {t.person}</div>
+                  <div style={{fontSize:11,color:T.muted}}>{t.date} · {t.subCat||t.category} · {t.person}</div>
                 </div>
-                <div style={{fontSize:14,fontWeight:800,color:t.category==="INCOME"?T.accent:T.text,flexShrink:0}}>â‚¹{Number(t.amount).toLocaleString("en-IN")}</div>
+                <div style={{fontSize:14,fontWeight:800,color:t.category==="INCOME"?T.accent:T.text,flexShrink:0}}>₹{Number(t.amount).toLocaleString("en-IN")}</div>
               </div>
             ))}
-            {preview.length>5&&<div style={{textAlign:"center",color:T.muted,fontSize:12}}>â€¦and {preview.length-5} more</div>}
+            {preview.length>5&&<div style={{textAlign:"center",color:T.muted,fontSize:12}}>…and {preview.length-5} more</div>}
           </div>
           <div style={{padding:"10px 14px",background:T.accentDim,borderRadius:10,fontSize:12,color:T.accent}}>
-            âœ… Duplicate transactions (same date + amount + description already in app) will be skipped automatically.
+            ✅ Duplicate transactions (same date + amount + description already in app) will be skipped automatically.
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <button onClick={()=>setStep("map")} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.muted,borderRadius:10,padding:"11px",fontWeight:700,cursor:"pointer"}}>â† Back</button>
             <button onClick={doImport} disabled={importing||preview.length===0} style={{background:T.accent,color:T.bg,border:"none",borderRadius:10,padding:"11px",fontWeight:700,cursor:"pointer"}}>
-              {importing?"Importingâ€¦":`Import ${preview.length} transactions`}
+              {importing?"Importing…":`Import ${preview.length} transactions`}
             </button>
           </div>
         </div>
@@ -257,11 +257,11 @@ export function ImportModal({open,onClose,s,onImport}) {
 
       {step==="done"&&importDone&&(
         <div style={{textAlign:"center",padding:"20px 0"}}>
-          <div style={{fontSize:48,marginBottom:16}}>ðŸŽ‰</div>
+          <div style={{fontSize:48,marginBottom:16}}>🎉</div>
           <div style={{fontWeight:800,fontSize:18,color:T.accent,marginBottom:8}}>Import Complete!</div>
           <div style={{color:T.muted,fontSize:14,marginBottom:24}}>
-            <div>âœ… {importDone.added} transactions imported</div>
-            {importDone.skipped>0&&<div>â­ {importDone.skipped} duplicates skipped</div>}
+            <div>✅ {importDone.added} transactions imported</div>
+            {importDone.skipped>0&&<div>⏭ {importDone.skipped} duplicates skipped</div>}
           </div>
           <button onClick={()=>{reset();onClose();}} style={{background:T.accent,color:T.bg,border:"none",borderRadius:10,padding:"12px 32px",fontWeight:700,cursor:"pointer",fontSize:14}}>Done</button>
         </div>

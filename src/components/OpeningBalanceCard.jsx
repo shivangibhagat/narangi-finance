@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { T, MONTHS } from "../constants/theme";
 import { DEFAULTS } from "../constants/defaults";
 import { fmt, mNum, monthKey } from "../utils/format";
@@ -47,13 +47,13 @@ export function OpeningBalanceCard({state,upd,activeYear,activeMonth}) {
     <Card style={{border:`1px solid ${T.accent}33`}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
         <div>
-          <div style={{fontSize:12,fontWeight:700,color:T.accent}}>ðŸ¦ Opening Bank Balance</div>
-          <div style={{fontSize:11,color:T.muted}}>{activeMonth} {activeYear} Â· Start of month</div>
+          <div style={{fontSize:12,fontWeight:700,color:T.accent}}>🏦 Opening Bank Balance</div>
+          <div style={{fontSize:11,color:T.muted}}>{activeMonth} {activeYear} · Start of month</div>
         </div>
         {!editing&&(
           <div style={{display:"flex",gap:8}}>
             {prevClosing>0&&!combined&&(
-              <Btn small variant="outline" color={T.green} onClick={carryForward}>â†‘ Carry {fmt(prevClosing)}</Btn>
+              <Btn small variant="outline" color={T.green} onClick={carryForward}>↑ Carry {fmt(prevClosing)}</Btn>
             )}
             <Btn small variant="outline" color={T.accent} onClick={()=>{setDraft(bal);setEditing(true);}}>Edit</Btn>
           </div>
@@ -87,7 +87,7 @@ export function OpeningBalanceCard({state,upd,activeYear,activeMonth}) {
               <div style={{fontSize:17,fontWeight:800,color:T.green}}>{fmt(combined)}</div>
             </div>
           </div>
-          {bal.note&&<div style={{fontSize:11,color:T.muted,marginTop:8,fontStyle:"italic"}}>ðŸ“ {bal.note}</div>}
+          {bal.note&&<div style={{fontSize:11,color:T.muted,marginTop:8,fontStyle:"italic"}}>📝 {bal.note}</div>}
         </>
       )}
     </Card>

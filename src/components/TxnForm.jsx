@@ -1,9 +1,9 @@
-﻿import { useEffect, useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { CATS } from "../constants/theme";
 import { DEFAULTS } from "../constants/defaults";
 import { Btn, Lbl, Sel, TI } from "./ui/primitives";
 
-// â”€â”€â”€ Transaction Form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Transaction Form ──────────────────────────────────────────────────────────
 export function TxnForm({state,value,onChange,onSubmit,submitLabel="Add Transaction"}) {
   const members = state.members||DEFAULTS.members;
   const subCatMap = useMemo(()=>({
@@ -44,7 +44,7 @@ export function TxnForm({state,value,onChange,onSubmit,submitLabel="Add Transact
         }} options={subCats}/>
       )}
       <TI label="Description" value={value.spentOn} onChange={v=>upd({spentOn:v})} placeholder="What was this for?"/>
-      <TI label="Amount (â‚¹)" type="number" value={String(value.amount||"")} onChange={v=>upd({amount:v})} placeholder="0"/>
+      <TI label="Amount (₹)" type="number" value={String(value.amount||"")} onChange={v=>upd({amount:v})} placeholder="0"/>
       <TI label="Note (optional)" value={value.note||""} onChange={v=>upd({note:v})} placeholder="Any details..."/>
       <div style={{display:"flex",flexDirection:"column",gap:6}}>
         <Lbl>Tags</Lbl>

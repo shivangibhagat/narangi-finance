@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { T, getVisibleMonths } from "../constants/theme";
 import { DEFAULTS } from "../constants/defaults";
 import { fmt, mNum, ccKey, uid, confirmDel } from "../utils/format";
@@ -63,7 +63,7 @@ export function CreditCardsTab({s,upd,updNow,transactions,getTxns,activeMonth,se
   if((s.creditCards||[]).length===0&&!showAddCard) return(
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
       <div style={{textAlign:"center",padding:"48px 24px",color:T.muted}}>
-        <div style={{fontSize:40,marginBottom:12}}>ðŸ’³</div>
+        <div style={{fontSize:40,marginBottom:12}}>💳</div>
         <div style={{fontWeight:700,fontSize:16,marginBottom:8}}>No credit cards yet</div>
         <div style={{fontSize:13,marginBottom:20}}>Add your credit cards to track balances and payments</div>
         <Btn onClick={()=>setShowAddCard(true)}>+ Add Credit Card</Btn>
@@ -105,10 +105,10 @@ export function CreditCardsTab({s,upd,updNow,transactions,getTxns,activeMonth,se
                   <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>
                     <input value={editCardVal.name||""} onChange={e=>setEditCardVal(v=>({...v,name:e.target.value}))} style={{...iSt,fontSize:15,fontWeight:700}}/>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                      <input type="number" value={editCardVal.initialOutstanding||""} onChange={e=>setEditCardVal(v=>({...v,initialOutstanding:+e.target.value}))} placeholder="Starting debt â‚¹" style={iSt}/>
-                      <input type="number" value={editCardVal.limit||""} onChange={e=>setEditCardVal(v=>({...v,limit:+e.target.value}))} placeholder="Credit limit â‚¹" style={iSt}/>
+                      <input type="number" value={editCardVal.initialOutstanding||""} onChange={e=>setEditCardVal(v=>({...v,initialOutstanding:+e.target.value}))} placeholder="Starting debt ₹" style={iSt}/>
+                      <input type="number" value={editCardVal.limit||""} onChange={e=>setEditCardVal(v=>({...v,limit:+e.target.value}))} placeholder="Credit limit ₹" style={iSt}/>
                     </div>
-                    <div style={{fontSize:11,color:T.muted,background:T.surface,borderRadius:8,padding:"8px 12px"}}>ðŸ’¡ Starting debt = what you owed when you first started tracking this card</div>
+                    <div style={{fontSize:11,color:T.muted,background:T.surface,borderRadius:8,padding:"8px 12px"}}>💡 Starting debt = what you owed when you first started tracking this card</div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                       <button onClick={()=>{updNow({creditCards:(s.creditCards||[]).map(c=>c.id===cc.id?{...c,...editCardVal}:c)});setEditCardId(null);}} style={{background:T.accent,border:"none",color:T.bg,borderRadius:8,padding:"10px",fontWeight:700,cursor:"pointer"}}>Save</button>
                       <button onClick={()=>setEditCardId(null)} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.muted,borderRadius:8,padding:"10px",fontWeight:700,cursor:"pointer"}}>Cancel</button>
@@ -119,24 +119,24 @@ export function CreditCardsTab({s,upd,updNow,transactions,getTxns,activeMonth,se
                 )}
                 <div style={{marginTop:6,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                   <Badge color={cc.person===members[0]?T.accent:T.purple}>{cc.person}</Badge>
-                  {cc.limit>0&&<span style={{fontSize:11,color:T.muted}}>Limit {fmt(cc.limit)} Â· Used <span style={{color:utilPct>=90?T.rose:utilPct>=70?T.amber:T.green,fontWeight:700}}>{utilPct}%</span></span>}
+                  {cc.limit>0&&<span style={{fontSize:11,color:T.muted}}>Limit {fmt(cc.limit)} · Used <span style={{color:utilPct>=90?T.rose:utilPct>=70?T.amber:T.green,fontWeight:700}}>{utilPct}%</span></span>}
                 </div>
               </div>
               {editCardId!==cc.id&&(
                 <div style={{display:"flex",gap:8,flexShrink:0}}>
-                  <button onClick={()=>{setEditCardId(cc.id);setEditCardVal({name:cc.name,initialOutstanding:cc.initialOutstanding||cc.outstanding||0,limit:cc.limit});}} style={{background:"transparent",border:"none",color:T.blue,cursor:"pointer",fontSize:20,padding:"4px",WebkitTapHighlightColor:"transparent"}}>âœï¸</button>
-                  <button onClick={()=>deleteCreditCard(cc.id)} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:20,padding:"4px",WebkitTapHighlightColor:"transparent"}}>ðŸ—‘</button>
+                  <button onClick={()=>{setEditCardId(cc.id);setEditCardVal({name:cc.name,initialOutstanding:cc.initialOutstanding||cc.outstanding||0,limit:cc.limit});}} style={{background:"transparent",border:"none",color:T.blue,cursor:"pointer",fontSize:20,padding:"4px",WebkitTapHighlightColor:"transparent"}}>âœ️</button>
+                  <button onClick={()=>deleteCreditCard(cc.id)} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:20,padding:"4px",WebkitTapHighlightColor:"transparent"}}>🗑</button>
                 </div>
               )}
             </div>
 
             {/* Monthly Statement */}
             <div style={{background:T.surface,borderRadius:12,padding:"14px",marginBottom:14}}>
-              <div style={{fontSize:12,fontWeight:700,color:clr,marginBottom:10}}>ðŸ“‹ {activeMonth} {activeYear} Statement</div>
+              <div style={{fontSize:12,fontWeight:700,color:clr,marginBottom:10}}>📋 {activeMonth} {activeYear} Statement</div>
               {[
                 {label:"Opening Balance",val:cc.openingBalance,color:T.muted,editable:false},
                 {label:"+ New Charges",val:cc.newCharges,color:T.rose,editable:true},
-                {label:"âˆ’ Payments Made",val:cc.monthPayments,color:T.green,editable:false},
+                {label:"− Payments Made",val:cc.monthPayments,color:T.green,editable:false},
                 {label:"Closing Balance",val:cc.closingBalance,color:cc.closingBalance===0?T.green:T.amber,bold:true},
               ].map((row,ri)=>(
                 <div key={ri} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${T.border}22`}}>
@@ -144,7 +144,7 @@ export function CreditCardsTab({s,upd,updNow,transactions,getTxns,activeMonth,se
                   {row.editable?(
                     <input type="number" value={row.val||""} onChange={e=>updateCharges(cc.id,e.target.value)} placeholder="0" style={{...iSt,width:130,textAlign:"right",color:T.rose,fontWeight:700,padding:"5px 8px"}}/>
                   ):(
-                    <span style={{fontSize:14,fontWeight:row.bold?800:700,color:row.color}}>{row.val===0?"âœ… Cleared":fmt(row.val)}</span>
+                    <span style={{fontSize:14,fontWeight:row.bold?800:700,color:row.color}}>{row.val===0?"✅ Cleared":fmt(row.val)}</span>
                   )}
                 </div>
               ))}
@@ -153,7 +153,7 @@ export function CreditCardsTab({s,upd,updNow,transactions,getTxns,activeMonth,se
             {/* Overall */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${T.border}`,marginBottom:14}}>
               <span style={{fontSize:13,color:T.muted}}>Current Balance (Overall)</span>
-              <span style={{fontSize:15,fontWeight:800,color:cc.currentBalance===0?T.green:T.amber}}>{cc.currentBalance===0?"âœ… Cleared":fmt(cc.currentBalance)}</span>
+              <span style={{fontSize:15,fontWeight:800,color:cc.currentBalance===0?T.green:T.amber}}>{cc.currentBalance===0?"✅ Cleared":fmt(cc.currentBalance)}</span>
             </div>
 
             {cc.limit>0&&(
@@ -168,10 +168,10 @@ export function CreditCardsTab({s,upd,updNow,transactions,getTxns,activeMonth,se
 
             {payForm.ccId===cc.id?(
               <div style={{padding:14,background:T.surface,borderRadius:12,border:`1px solid ${clr}44`,marginBottom:12}}>
-                <div style={{fontWeight:700,fontSize:13,color:clr,marginBottom:10}}>Log Payment â€” {activeMonth} {activeYear}</div>
+                <div style={{fontWeight:700,fontSize:13,color:clr,marginBottom:10}}>Log Payment — {activeMonth} {activeYear}</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
                   <input type="date" value={payForm.date} onChange={e=>setPayForm(f=>({...f,date:e.target.value}))} style={iSt}/>
-                  <input type="number" value={payForm.amount} onChange={e=>setPayForm(f=>({...f,amount:e.target.value}))} placeholder="Amount â‚¹" style={iSt}/>
+                  <input type="number" value={payForm.amount} onChange={e=>setPayForm(f=>({...f,amount:e.target.value}))} placeholder="Amount ₹" style={iSt}/>
                 </div>
                 <input value={payForm.note} onChange={e=>setPayForm(f=>({...f,note:e.target.value}))} placeholder="Note (e.g. May bill)" style={{...iSt,marginBottom:10}}/>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -188,7 +188,7 @@ export function CreditCardsTab({s,upd,updNow,transactions,getTxns,activeMonth,se
                 <div style={{fontSize:11,color:T.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Recent Payments</div>
                 {cc.recentPmts.map(t=>(
                   <div key={t.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${T.border}22`}}>
-                    <span style={{fontSize:12,color:T.muted}}>{t.date} â€” {t.note||"Payment"}</span>
+                    <span style={{fontSize:12,color:T.muted}}>{t.date} — {t.note||"Payment"}</span>
                     <span style={{fontSize:12,fontWeight:700,color:clr}}>{fmt(t.amount)}</span>
                   </div>
                 ))}
@@ -204,9 +204,9 @@ export function CreditCardsTab({s,upd,updNow,transactions,getTxns,activeMonth,se
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             <TI label="Card Name" value={newCard.name} onChange={v=>setNewCard(c=>({...c,name:v}))} placeholder="e.g. HDFC Regalia"/>
             <Sel label="Assigned To" value={newCard.person} onChange={v=>setNewCard(c=>({...c,person:v}))} options={members}/>
-            <TI label="Current Debt â‚¹ (what you owe today)" type="number" value={newCard.initialOutstanding} onChange={v=>setNewCard(c=>({...c,initialOutstanding:v}))} placeholder="0"/>
-            <TI label="Credit Limit â‚¹" type="number" value={newCard.limit} onChange={v=>setNewCard(c=>({...c,limit:v}))} placeholder="0"/>
-            <div style={{fontSize:11,color:T.muted,padding:"8px 12px",background:T.surface,borderRadius:8}}>ðŸ’¡ Enter your current debt once. Then log new monthly charges and payments â€” the balance auto-calculates.</div>
+            <TI label="Current Debt ₹ (what you owe today)" type="number" value={newCard.initialOutstanding} onChange={v=>setNewCard(c=>({...c,initialOutstanding:v}))} placeholder="0"/>
+            <TI label="Credit Limit ₹" type="number" value={newCard.limit} onChange={v=>setNewCard(c=>({...c,limit:v}))} placeholder="0"/>
+            <div style={{fontSize:11,color:T.muted,padding:"8px 12px",background:T.surface,borderRadius:8}}>💡 Enter your current debt once. Then log new monthly charges and payments — the balance auto-calculates.</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}}>
               <button onClick={()=>{if(!newCard.name)return;updNow({creditCards:[...(s.creditCards||[]),{id:uid(),name:newCard.name,person:newCard.person,initialOutstanding:+newCard.initialOutstanding||0,limit:+newCard.limit||0}]});setNewCard({name:"",person:members[0],initialOutstanding:"",limit:""});setShowAddCard(false);}} style={{background:T.accent,border:"none",color:T.bg,borderRadius:10,padding:"12px",fontWeight:700,cursor:"pointer"}}>Add Card</button>
               <button onClick={()=>setShowAddCard(false)} style={{background:"transparent",border:`1px solid ${T.border}`,color:T.muted,borderRadius:10,padding:"12px",fontWeight:700,cursor:"pointer"}}>Cancel</button>
