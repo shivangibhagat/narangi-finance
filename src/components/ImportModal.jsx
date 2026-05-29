@@ -104,6 +104,31 @@ export function ImportModal({open,onClose,s,onImport}) {
       if(category==="VARIABLE EXPENSES"&&(rawSubCatUpper.includes("CREDIT CARD")||rawSubCatUpper.includes("CC BILL"))){
         category="CC PAYMENT";
       }
+      // Normalize Excel sub-category names to app sub-category names
+      const subCatNormMap = {
+        "VEGETABLES + GROCERY": "VEGETABLES + GROCERY",
+        "WIFI + PHONE BILL": "WIFI + PHONE BILL",
+        "HOUSE RENT": "HOUSE RENT",
+        "SEND TO HOME": "SEND TO HOME",
+        "LIGHTBILL": "LIGHTBILL",
+        "GAS BILL": "GAS BILL",
+        "MONTHLY SIP": "MONTHLY SIP",
+        "MEDICLAIM": "MEDICLAIM",
+        "RENTMOJO ITEMS": "RENTMOJO ITEMS",
+        "CAR AND SCOOTY WASH": "CAR AND SCOOTY WASH",
+        "MISC": "MISC",
+        "ENTERTAINMENT": "ENTERTAINMENT",
+        "CAFES/RESTAURANTS": "CAFES/RESTAURANTS",
+        "SUBSCRIPTIONS": "SUBSCRIPTIONS",
+        "GIFTS": "GIFTS",
+        "ONLINE FOOD": "ONLINE FOOD",
+        "CREDIT CARD BILLS": "CREDIT CARD BILLS",
+        "SHOPPING": "SHOPPING",
+        "BODY CARE": "BODY CARE",
+        "TRANSPORT": "TRANSPORT",
+        "SALARY_NARR": "SALARY_NARR",
+        "SALARY_SHIVU": "SALARY_SHIVU",
+      };
       const rawPerson=String(get(row,mapping.person)||"").trim().toUpperCase();
       const person=members.find(m=>m.toUpperCase()===rawPerson)||members[0];
       const subCat=rawSubCatUpper||String(get(row,mapping.subCat)||"").trim();
