@@ -58,7 +58,7 @@ export default function App() {
     subCat: "CAFES/RESTAURANTS",
     spentOn: "",
     amount: "",
-    person: "NARR",
+    person: (s.members || DEFAULTS.members)[0],
     note: "",
     tags: [],
   });
@@ -71,14 +71,16 @@ export default function App() {
 
   const members = s.members || DEFAULTS.members;
   const getTxns = useCallback(
-    (m, y = activeYear) =>
-      (s.transactions || []).filter((t) => t.date.startsWith(`${y}-${mNum(m)}`)),
+    (m, y) => {
+      const yr = y ?? activeYear;
+      return (s.transactions || []).filter((t) => t.date.startsWith(`${yr}-${mNum(m)}`));
+    },
     [s.transactions, activeYear]
   );
 
   const monthTxns = useMemo(
     () => getTxns(activeMonth, activeYear),
-    [s.transactions, activeMonth, activeYear]
+    [getTxns, activeMonth, activeYear]
   );
   const summary = useMemo(() => summarize(monthTxns), [monthTxns]);
   const prevIdx = MONTHS.indexOf(activeMonth) - 1;
@@ -88,7 +90,7 @@ export default function App() {
     return summarize(
       prevIdx >= 0 ? getTxns(MONTHS[prevIdx], activeYear) : getTxns("Dec", activeYear - 1)
     );
-  }, [s.transactions, activeMonth, activeYear]);
+  }, [getTxns, activeMonth, activeYear, isFirstTrackedMonth]);
 
   const ob = s.openingBalances?.[monthKey(activeYear, activeMonth)] || {};
   const openingTotal = members.reduce((a, m) => a + (ob[m] || 0), 0);
@@ -364,7 +366,7 @@ export default function App() {
                 <div
                   style={{
                     position: "absolute",
-                    top: isMobile ? 56 : 64,
+                    top: 44,
                     right: 0,
                     background: T.card,
                     border: `1px solid ${T.border}`,

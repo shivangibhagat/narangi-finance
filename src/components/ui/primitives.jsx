@@ -183,24 +183,28 @@ export const Modal = ({ open, onClose, title, children }) => {
           background: T.card,
           border: `1px solid ${T.border}`,
           borderRadius: isMobile ? "20px 20px 0 0" : "20px",
-          padding: "24px 20px",
+          padding: isMobile ? "0 20px 24px" : "24px 20px",
+          paddingTop: isMobile ? 0 : 24,
           width: isMobile ? "100%" : "500px",
           maxWidth: "100%",
-          maxHeight: isMobile ? "92vh" : "90vh",
+          maxHeight: isMobile ? "92dvh" : "90vh",
           overflowY: "auto",
+          WebkitOverflowScrolling: "touch",
         }}
         onClick={(e) => e.stopPropagation()}
       >
         {isMobile && (
-          <div
-            style={{
-              width: 40,
-              height: 4,
-              background: T.border,
-              borderRadius: 99,
-              margin: "0 auto 20px",
-            }}
-          />
+          <div style={{ padding: "16px 0 0", position: "sticky", top: 0, background: T.card, zIndex: 1 }}>
+            <div
+              style={{
+                width: 40,
+                height: 4,
+                background: T.border,
+                borderRadius: 99,
+                margin: "0 auto 16px",
+              }}
+            />
+          </div>
         )}
         <div
           style={{
