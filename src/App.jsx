@@ -12,8 +12,8 @@ import {
   TABS,
 } from "./constants/theme";
 import { DEFAULTS } from "./constants/defaults";
-import { mNum, monthKey, uid, confirmDel } from "./utils/format";
-import { summarize } from "./utils/finance";
+import { mNum, monthKey, ccKey, uid, confirmDel } from "./utils/format";
+import { summarize, computeCCBalance, ccPaymentMatchesCard } from "./utils/finance";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { useOutsideClick } from "./hooks/useOutsideClick";
 import { useFirestoreSync } from "./hooks/useFirestoreSync";
@@ -101,6 +101,21 @@ export default function App() {
     summary.variable -
     summary.ccPaid -
     summary.savings;
+  // Total CC debt still owed this month (opening balance + charges − payments)
+  const totalCCOwed = useMemo(() => {
+    return (s.creditCards || []).reduce((total, cc) => {
+      const opening = computeCCBalance(cc, activeYear, activeMonth, s.transactions || [], s.ccMonthlyCharges);
+      const charges = (s.ccMonthlyCharges || {})[ccKey(cc.id, activeYear, activeMonth)] || 0;
+      const paid = getTxns(activeMonth, activeYear)
+        .filter(t => ccPaymentMatchesCard(t, cc))
+        .reduce((a, t) => a + t.amount, 0);
+      return total + Math.max(0, opening + charges - paid);
+    }, 0);
+  }, [s.creditCards, s.ccMonthlyCharges, s.transactions, activeYear, activeMonth, getTxns]);
+
+  // What's truly safe to spend once all CC bills are paid
+  const safeBalance = currentBalance - totalCCOwed;
+
   const totalIncome = (s.income || []).reduce((a, i) => a + i.amount, 0);
   const totalFixed = (s.fixedExpenses || []).reduce((a, f) => a + f.budget, 0);
   const totalSavings = (s.savings || []).reduce((a, sv) => a + sv.monthlyTarget, 0);
@@ -475,6 +490,8 @@ export default function App() {
             prevIdx={prevIdx}
             openingTotal={openingTotal}
             currentBalance={currentBalance}
+            totalCCOwed={totalCCOwed}
+            safeBalance={safeBalance}
             varPct={varPct}
             varStatus={varStatus}
             annualData={annualData}

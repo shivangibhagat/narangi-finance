@@ -19,12 +19,15 @@ export function DashboardTab({
   prevIdx,
   openingTotal,
   currentBalance,
+  totalCCOwed = 0,
+  safeBalance,
   varPct,
   varStatus,
   annualData,
   catBreakdown,
   ob,
 }) {
+  const effectiveSafe = safeBalance ?? currentBalance;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 10 : 14 }}>
       <OpeningBalanceCard
@@ -126,6 +129,74 @@ export function DashboardTab({
           );
         })}
       </div>
+      {/* ── Safe Balance after CC Bills ── */}
+      {(s.creditCards || []).length > 0 && (() => {
+        const hasCCData = totalCCOwed > 0;
+        const isShortfall = effectiveSafe < 0;
+        const statusClr = isShortfall ? T.rose : effectiveSafe < totalCCOwed * 0.2 ? T.amber : T.green;
+        return (
+          <div style={{
+            padding: "16px",
+            background: statusClr + "10",
+            border: `1px solid ${statusClr}33`,
+            borderRadius: 14,
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ fontWeight: 700, fontSize: 13 }}>💳 Safe Balance — After Paying CC Bills</div>
+              <div style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: statusClr,
+                background: statusClr + "18",
+                padding: "3px 10px",
+                borderRadius: 999,
+              }}>
+                {isShortfall ? "⚠️ Shortfall" : "✅ Covered"}
+              </div>
+            </div>
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "1fr auto 1fr auto 1fr",
+              gap: 8,
+              alignItems: "center",
+              marginBottom: hasCCData && isShortfall ? 10 : 0,
+            }}>
+              <div style={{ background: T.surface, borderRadius: 10, padding: "10px 12px", textAlign: "center" }}>
+                <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, textTransform: "uppercase", marginBottom: 4 }}>Bank Balance</div>
+                <div style={{ fontSize: isMobile ? 14 : 16, fontWeight: 800, color: T.blue }}>{fmt(currentBalance)}</div>
+              </div>
+              <div style={{ fontSize: 18, color: T.muted, textAlign: "center" }}>−</div>
+              <div style={{ background: T.surface, borderRadius: 10, padding: "10px 12px", textAlign: "center" }}>
+                <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, textTransform: "uppercase", marginBottom: 4 }}>CC Bills Owed</div>
+                <div style={{ fontSize: isMobile ? 14 : 16, fontWeight: 800, color: T.rose }}>{fmt(totalCCOwed)}</div>
+              </div>
+              <div style={{ fontSize: 18, color: T.muted, textAlign: "center" }}>=</div>
+              <div style={{
+                background: statusClr + "18",
+                border: `1px solid ${statusClr}44`,
+                borderRadius: 10,
+                padding: "10px 12px",
+                textAlign: "center",
+              }}>
+                <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, textTransform: "uppercase", marginBottom: 4 }}>Safe to Spend</div>
+                <div style={{ fontSize: isMobile ? 15 : 18, fontWeight: 800, color: statusClr }}>{fmt(Math.abs(effectiveSafe))}</div>
+              </div>
+            </div>
+            {isShortfall && (
+              <div style={{ fontSize: 12, color: T.rose, marginTop: 8 }}>
+                ⚠️ Your bank balance is {fmt(Math.abs(effectiveSafe))} short of covering all CC bills.
+                Consider keeping this amount aside before spending.
+              </div>
+            )}
+            {!isShortfall && totalCCOwed > 0 && (
+              <div style={{ fontSize: 12, color: T.muted, marginTop: 8 }}>
+                You have enough to pay off all CC bills — {fmt(effectiveSafe)} left over after clearing.
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       <Card>
         <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>
           {activeYear} Annual Overview

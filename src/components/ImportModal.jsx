@@ -26,7 +26,7 @@ export function ImportModal({open,onClose,s,onImport}) {
     const reader=new FileReader();
     reader.onload=e=>{
       try{
-        const workbook=XLSX.read(e.target.result,{type:"array",cellDates:true});
+        const workbook=XLSX.read(e.target.result,{type:"array"});
         setWb(workbook);
         loadSheet(workbook,workbook.SheetNames[0]);
         setSheetName(workbook.SheetNames[0]);
@@ -54,7 +54,7 @@ export function ImportModal({open,onClose,s,onImport}) {
       if(/date/.test(hl) && m.date===-1) m.date=i;
       else if(/(category|cat)/.test(hl) && !/sub/.test(hl) && m.category===-1) m.category=i;
       else if(/(subcat|subcategory|sub)/.test(hl) && m.subCat===-1) m.subCat=i;
-      else if(/(descr|spenton|spent|what|particular|detail|narrat|item)/.test(hl) && m.spentOn===-1) m.spentOn=i;
+      else if(/(descr|spenton|spenton|spent|what|particular|detail|narrat|item|particulars)/.test(hl) && m.spentOn===-1) m.spentOn=i;
       else if(/(amount|amt|rs|inr|rupee|money|value)/.test(hl) && m.amount===-1) m.amount=i;
       else if(/(person|who|member|by|paid)/.test(hl) && m.person===-1) m.person=i;
       else if(/(note|remark|comment|desc)/.test(hl) && m.note===-1) m.note=i;
@@ -64,21 +64,41 @@ export function ImportModal({open,onClose,s,onImport}) {
 
   const fmtDateCell=val=>{
     if(!val && val!==0) return "";
-    if(val instanceof Date) return val.toISOString().slice(0,10);
+    if(val instanceof Date) {
+      // Without cellDates:true this branch won't be hit for Excel dates.
+      // But if a Date object arrives somehow, use getFullYear/getMonth/getDate
+      // (local time parts) which is correct for local-midnight Dates (XLSX default).
+      // For UTC-midnight Dates (IST +5:30 is always ahead, so local === UTC date), also correct.
+      const y = val.getFullYear();
+      const m = String(val.getMonth() + 1).padStart(2, "0");
+      const d = String(val.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
     if(typeof val==="string"){
-      // try common formats: DD-MM-YYYY, DD/MM/YYYY, YYYY-MM-DD
       const s=val.trim();
+      // ISO format YYYY-MM-DD
       const iso=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
       if(iso) return `${iso[1]}-${iso[2].padStart(2,"0")}-${iso[3].padStart(2,"0")}`;
+      // MM/DD/YYYY (Excel formatted display value like "5/1/2026")
+      const mdy=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if(mdy) return `${mdy[3]}-${mdy[1].padStart(2,"0")}-${mdy[2].padStart(2,"0")}`;
+      // DD-MM-YYYY or DD/MM/YYYY
       const dmy=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
       if(dmy){
         const y=dmy[3].length===2?`20${dmy[3]}`:dmy[3];
+        // Heuristic: if first number > 12 it must be DD, else ambiguous — assume DD/MM
+        const isDD = parseInt(dmy[1]) > 12;
+        if(isDD) return `${y}-${dmy[2].padStart(2,"0")}-${dmy[1].padStart(2,"0")}`;
+        // Could be MM/DD — check if second number > 12 (must be day)
+        const isMD = parseInt(dmy[2]) > 12;
+        if(isMD) return `${y}-${dmy[1].padStart(2,"0")}-${dmy[2].padStart(2,"0")}`;
+        // Default: assume DD/MM/YYYY (Indian convention)
         return `${y}-${dmy[2].padStart(2,"0")}-${dmy[1].padStart(2,"0")}`;
       }
       return s;
     }
     if(typeof val==="number"){
-      // Excel serial date
+      // Excel serial date — use SSF.parse_date_code which is always timezone-safe
       try{
         const d=XLSX.SSF.parse_date_code(val);
         return `${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`;
@@ -131,7 +151,8 @@ export function ImportModal({open,onClose,s,onImport}) {
       };
       const rawPerson=String(get(row,mapping.person)||"").trim().toUpperCase();
       const person=members.find(m=>m.toUpperCase()===rawPerson)||members[0];
-      const subCat=rawSubCatUpper||String(get(row,mapping.subCat)||"").trim();
+      // Apply normalization map — fall back to rawSubCatUpper if no mapping found
+      const subCat=subCatNormMap[rawSubCatUpper]||rawSubCatUpper||String(get(row,mapping.subCat)||"").trim();
       const spentOn=String(get(row,mapping.spentOn)||"").trim();
       const ccId=category==="CC PAYMENT"?resolveCcId(subCat,spentOn,s.creditCards||[]):null;
       return {
@@ -226,7 +247,7 @@ export function ImportModal({open,onClose,s,onImport}) {
                   {rows.slice(0,3).map((row,ri)=>(
                     <tr key={ri}>{headers.map((_,ci)=>(
                       <td key={ci} style={{padding:"3px 8px",borderTop:`1px solid ${T.border}`,whiteSpace:"nowrap",maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",color:T.text}}>
-                        {row[ci] instanceof Date ? row[ci].toLocaleDateString() : String(row[ci]||"")}
+                        {row[ci] instanceof Date ? (row[ci].getFullYear()+"-"+String(row[ci].getMonth()+1).padStart(2,"0")+"-"+String(row[ci].getDate()).padStart(2,"0")) : String(row[ci]||"")}
                       </td>
                     ))}</tr>
                   ))}
