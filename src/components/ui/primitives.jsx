@@ -129,34 +129,35 @@ export const ActualBar = ({ budget, actual, color }) => {
         Actual: {fmt(actual)}
       </div>
     );
-  const pct = Math.min(100, Math.round((actual / budget) * 100));
-  const c = pct >= 100 ? T.rose : pct >= 80 ? T.amber : T.green;
+  const rawPct = Math.round((actual / budget) * 100);
+  const barPct = Math.min(100, rawPct);
+  const isOver = rawPct > 100;
+  const c = isOver ? T.rose : rawPct >= 80 ? T.amber : T.green;
   return (
     <div style={{ marginTop: 6 }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          fontSize: 11,
-          marginBottom: 3,
-        }}
-      >
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}>
         <span style={{ color: T.muted }}>
-          Actual:{" "}
-          <span style={{ color: c, fontWeight: 700 }}>{fmt(actual)}</span>
+          Actual: <span style={{ color: c, fontWeight: 700 }}>{fmt(actual)}</span>
         </span>
-        <span style={{ color: c, fontWeight: 700 }}>{pct}%</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ color: c, fontWeight: 700 }}>{rawPct}%</span>
+          {isOver && (
+            <span style={{
+              fontSize: 9, fontWeight: 800, color: T.rose,
+              background: T.rose + "22", borderRadius: 4, padding: "1px 5px",
+              letterSpacing: "0.04em",
+            }}>OVER</span>
+          )}
+        </span>
       </div>
       <div style={{ height: 4, background: T.border, borderRadius: 99 }}>
-        <div
-          style={{
-            height: "100%",
-            width: `${pct}%`,
-            background: c,
-            borderRadius: 99,
-            transition: "width 0.4s",
-          }}
-        />
+        <div style={{
+          height: "100%",
+          width: `${barPct}%`,
+          background: isOver ? T.rose : c,
+          borderRadius: 99,
+          transition: "width 0.4s",
+        }} />
       </div>
     </div>
   );

@@ -27,15 +27,27 @@ export function TxnForm({ state, value, onChange, onSubmit, submitLabel = "Add T
   const members = state.members || DEFAULTS.members;
   const amountRef = useRef(null);
 
-  const subCatMap = useMemo(() => ({
-    INCOME: (state.income || []).map(i => i.label),
-    "FIXED EXPENSES": (state.fixedExpenses || []).map(f => f.label),
+  // subCatValues: canonical stored value (subCat || label)
+  // subCatLabels: human-readable display label
+  const subCatValues = useMemo(() => ({
+    INCOME:             (state.income       || []).map(i => i.subCat || i.label),
+    "FIXED EXPENSES":   (state.fixedExpenses|| []).map(f => f.subCat || f.label),
     "VARIABLE EXPENSES": state.variableSubCats || [],
-    SAVINGS: (state.savings || []).map(s => s.label),
-    "CC PAYMENT": (state.creditCards || []).map(c => c.name),
+    SAVINGS:            (state.savings      || []).map(s => s.label),
+    "CC PAYMENT":       (state.creditCards  || []).map(c => c.name),
   }), [state.income, state.fixedExpenses, state.variableSubCats, state.savings, state.creditCards]);
+  const subCatLabels = useMemo(() => ({
+    INCOME:             (state.income       || []).map(i => i.label),
+    "FIXED EXPENSES":   (state.fixedExpenses|| []).map(f => f.label),
+    "VARIABLE EXPENSES": state.variableSubCats || [],
+    SAVINGS:            (state.savings      || []).map(s => s.label),
+    "CC PAYMENT":       (state.creditCards  || []).map(c => c.name),
+  }), [state.income, state.fixedExpenses, state.variableSubCats, state.savings, state.creditCards]);
+  // For backward compat in effect deps and subCat checks
+  const subCatMap = subCatValues;
 
-  const subCats = subCatMap[value.category] || [];
+  const subCats = subCatValues[value.category] || [];   // canonical values
+  const subCatDisplays = subCatLabels[value.category] || []; // display labels
 
   // Reset subCat when category changes and current subCat is no longer valid
   useEffect(() => {
@@ -143,7 +155,8 @@ export function TxnForm({ state, value, onChange, onSubmit, submitLabel = "Add T
             WebkitOverflowScrolling: "touch",
             paddingBottom: 4,
           }}>
-            {subCats.map(sc => {
+            {subCats.map((sc, sciIdx) => {
+              const displayLabel = subCatDisplays[sciIdx] || sc;
               const active = (subCats.includes(value.subCat) ? value.subCat : subCats[0]) === sc;
               return (
                 <button
@@ -166,7 +179,7 @@ export function TxnForm({ state, value, onChange, onSubmit, submitLabel = "Add T
                     WebkitTapHighlightColor: "transparent",
                   }}
                 >
-                  {sc}
+                  {displayLabel}
                 </button>
               );
             })}

@@ -16,9 +16,22 @@ export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transa
   const iSt={...iSty,fontSize:13,padding:"8px 10px"};
 
   const monthTxns=useMemo(()=>transactions.filter(t=>t.date.startsWith(`${activeYear}-${mNum(activeMonth)}`)),[transactions,activeMonth,activeYear]);
-  const fixedActuals=useMemo(()=>{ const m={}; monthTxns.filter(t=>t.category==="FIXED EXPENSES").forEach(t=>{const k=t.subCat.trim().toUpperCase();m[k]=(m[k]||0)+t.amount;}); return m; },[monthTxns]); // UPPERCASE keys
+  // Robust per-item actual computation — matches by subCat OR label (handles both
+  // imported transactions that use subCat and manually entered ones that use label)
+  const getItemActual = (cat, item) => {
+    const canon = (item.subCat || "").trim().toUpperCase();
+    const lbl   = (item.label  || "").trim().toUpperCase();
+    return monthTxns
+      .filter(t => t.category === cat)
+      .filter(t => {
+        const sc = (t.subCat || "").trim().toUpperCase();
+        return (canon && sc === canon) || (lbl && sc === lbl);
+      })
+      .reduce((a, t) => a + t.amount, 0);
+  };
+  const fixedActuals  = useMemo(() => Object.fromEntries((s.fixedExpenses||[]).map(fe => [fe.id, getItemActual("FIXED EXPENSES", fe)])), [monthTxns, s.fixedExpenses]);
+  const incomeActuals = useMemo(() => Object.fromEntries((s.income||[]).map(inc => [inc.id, getItemActual("INCOME", inc)])), [monthTxns, s.income]);
   const varActual=useMemo(()=>monthTxns.filter(t=>t.category==="VARIABLE EXPENSES").reduce((a,t)=>a+t.amount,0),[monthTxns]);
-  const incomeActuals=useMemo(()=>{ const m={}; monthTxns.filter(t=>t.category==="INCOME").forEach(t=>{const k=t.subCat.trim().toUpperCase();m[k]=(m[k]||0)+t.amount;}); return m; },[monthTxns]); // UPPERCASE keys
   const savingsProgress=useMemo(()=>{ const mp={}; monthTxns.filter(t=>t.category==="SAVINGS").forEach(t=>{mp[t.subCat]=(mp[t.subCat]||0)+t.amount;}); return mp; },[monthTxns]);
   const savingsProgressAll=useMemo(()=>{ const mp={}; transactions.filter(t=>t.category==="SAVINGS").forEach(t=>{mp[t.subCat]=(mp[t.subCat]||0)+t.amount;}); return mp; },[transactions]);
 
@@ -61,11 +74,11 @@ export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transa
                   <span style={{fontSize:14}}>{inc.label}</span>
                   <div style={{display:"flex",alignItems:"center",gap:10}}>
                     <span style={{fontWeight:700,color:T.accent}}>{fmt(inc.amount)}</span>
-                    <button onClick={()=>{setEditId(inc.id);setEditVal({label:inc.label,amount:inc.amount});}} style={{background:"transparent",border:"none",color:T.blue,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>âœ️</button>
+                    <button onClick={()=>{setEditId(inc.id);setEditVal({label:inc.label,amount:inc.amount});}} style={{background:"transparent",border:"none",color:T.blue,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>✏️</button>
                     <button onClick={()=>{if(confirmDel(inc.label)) updNow({income:(s.income||[]).filter(i=>i.id!==inc.id)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>🗑</button>
                   </div>
                 </div>
-                <ActualBar budget={inc.amount} actual={incomeActuals[(inc.subCat||"").trim().toUpperCase()]||incomeActuals[inc.label.trim().toUpperCase()]||0} color={T.accent}/>
+                <ActualBar budget={inc.amount} actual={incomeActuals[inc.id]||0} color={T.accent}/>
               </>
             )}
           </div>
@@ -95,11 +108,11 @@ export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transa
                   <span style={{fontSize:14}}>{fe.label}</span>
                   <div style={{display:"flex",alignItems:"center",gap:10}}>
                     <span style={{fontWeight:700,color:T.blue}}>{fmt(fe.budget)}</span>
-                    <button onClick={()=>{setEditId(fe.id);setEditVal({label:fe.label,budget:fe.budget});}} style={{background:"transparent",border:"none",color:T.blue,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>âœ️</button>
+                    <button onClick={()=>{setEditId(fe.id);setEditVal({label:fe.label,budget:fe.budget});}} style={{background:"transparent",border:"none",color:T.blue,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>✏️</button>
                     <button onClick={()=>{if(confirmDel(fe.label)) updNow({fixedExpenses:(s.fixedExpenses||[]).filter(f=>f.id!==fe.id)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>🗑</button>
                   </div>
                 </div>
-                <ActualBar budget={fe.budget} actual={fixedActuals[(fe.subCat||"").trim().toUpperCase()]||fixedActuals[fe.label.trim().toUpperCase()]||0} color={T.blue}/>
+                <ActualBar budget={fe.budget} actual={fixedActuals[fe.id]||0} color={T.blue}/>
               </>
             )}
           </div>
@@ -172,7 +185,7 @@ export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transa
                     </div>
                     <div style={{display:"flex",gap:8,alignItems:"center"}}>
                       <span style={{fontSize:16,fontWeight:800,color:clr}}>{pct.toFixed(0)}%</span>
-                      <button onClick={()=>{setEditId(sv.id);setEditVal({label:sv.label,monthlyTarget:sv.monthlyTarget,goalTarget:sv.goalTarget});}} style={{background:"transparent",border:"none",color:T.blue,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>âœ️</button>
+                      <button onClick={()=>{setEditId(sv.id);setEditVal({label:sv.label,monthlyTarget:sv.monthlyTarget,goalTarget:sv.goalTarget});}} style={{background:"transparent",border:"none",color:T.blue,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>✏️</button>
                       <button onClick={()=>{if(confirmDel(sv.label)) updNow({savings:(s.savings||[]).filter(s2=>s2.id!==sv.id)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>🗑</button>
                     </div>
                   </div>
