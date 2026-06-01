@@ -185,13 +185,14 @@ export default function App() {
           opening: members.reduce((a, mem) => a + (ob2[mem] || 0), 0),
         };
       }),
-    [s.transactions, s.openingBalances, activeYear, members]
+    [getTxns, s.openingBalances, activeYear, members]
   );
 
+  // FIX: only show FIXED + VARIABLE in spend breakdown (not CC payments or savings)
   const catBreakdown = useMemo(() => {
     const grp = {};
     monthTxns
-      .filter((t) => t.category !== "INCOME")
+      .filter((t) => t.category === "FIXED EXPENSES" || t.category === "VARIABLE EXPENSES")
       .forEach((t) => {
         grp[t.subCat] = (grp[t.subCat] || 0) + t.amount;
       });

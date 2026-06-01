@@ -65,7 +65,7 @@ export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transa
                     <button onClick={()=>{if(confirmDel(inc.label)) updNow({income:(s.income||[]).filter(i=>i.id!==inc.id)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>🗑</button>
                   </div>
                 </div>
-                <ActualBar budget={inc.amount} actual={incomeActuals[inc.label.trim().toUpperCase()]||0} color={T.accent}/>
+                <ActualBar budget={inc.amount} actual={incomeActuals[(inc.subCat||"").trim().toUpperCase()]||incomeActuals[inc.label.trim().toUpperCase()]||0} color={T.accent}/>
               </>
             )}
           </div>
@@ -73,7 +73,7 @@ export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transa
         <div style={{display:"flex",gap:8}}>
           <input value={newIncome.label} onChange={e=>setNewIncome(v=>({...v,label:e.target.value}))} placeholder="Source name" style={{...iSt,flex:1}}/>
           <input type="number" value={newIncome.amount} onChange={e=>setNewIncome(v=>({...v,amount:e.target.value}))} placeholder="₹" style={{...iSt,width:90,textAlign:"right"}}/>
-          <button onClick={()=>{if(!newIncome.label||!newIncome.amount)return;updNow({income:[...(s.income||[]),{id:uid(),label:newIncome.label,amount:+newIncome.amount}]});setNewIncome({label:"",amount:""}); }} style={{background:T.accent,border:"none",color:T.bg,borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13,whiteSpace:"nowrap"}}>+ Add</button>
+          <button onClick={()=>{if(!newIncome.label||!newIncome.amount)return;updNow({income:[...(s.income||[]),{id:uid(),label:newIncome.label,subCat:newIncome.label.trim().toUpperCase(),amount:+newIncome.amount}]});setNewIncome({label:"",amount:""}); }} style={{background:T.accent,border:"none",color:T.bg,borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13,whiteSpace:"nowrap"}}>+ Add</button>
         </div>
       </Card>
 
@@ -99,7 +99,7 @@ export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transa
                     <button onClick={()=>{if(confirmDel(fe.label)) updNow({fixedExpenses:(s.fixedExpenses||[]).filter(f=>f.id!==fe.id)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>🗑</button>
                   </div>
                 </div>
-                <ActualBar budget={fe.budget} actual={fixedActuals[fe.label.trim().toUpperCase()]||0} color={T.blue}/>
+                <ActualBar budget={fe.budget} actual={fixedActuals[(fe.subCat||"").trim().toUpperCase()]||fixedActuals[fe.label.trim().toUpperCase()]||0} color={T.blue}/>
               </>
             )}
           </div>
@@ -107,7 +107,7 @@ export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transa
         <div style={{display:"flex",gap:8}}>
           <input value={newFixed.label} onChange={e=>setNewFixed(v=>({...v,label:e.target.value}))} placeholder="Expense name" style={{...iSt,flex:1}}/>
           <input type="number" value={newFixed.budget} onChange={e=>setNewFixed(v=>({...v,budget:e.target.value}))} placeholder="₹" style={{...iSt,width:90,textAlign:"right"}}/>
-          <button onClick={()=>{if(!newFixed.label||!newFixed.budget)return;updNow({fixedExpenses:[...(s.fixedExpenses||[]),{id:uid(),label:newFixed.label,budget:+newFixed.budget}]});setNewFixed({label:"",budget:""});}} style={{background:T.blue,border:"none",color:T.bg,borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13,whiteSpace:"nowrap"}}>+ Add</button>
+          <button onClick={()=>{if(!newFixed.label||!newFixed.budget)return;updNow({fixedExpenses:[...(s.fixedExpenses||[]),{id:uid(),label:newFixed.label,subCat:newFixed.label.trim().toUpperCase(),budget:+newFixed.budget}]});setNewFixed({label:"",budget:""});}} style={{background:T.blue,border:"none",color:T.bg,borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13,whiteSpace:"nowrap"}}>+ Add</button>
         </div>
         <div style={{paddingTop:12,marginTop:8,borderTop:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",fontWeight:800}}><span>Total Fixed Budget</span><span style={{color:T.blue}}>{fmt(totalFixed)}</span></div>
       </Card>
