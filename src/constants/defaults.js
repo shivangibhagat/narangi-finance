@@ -47,7 +47,6 @@ export const DEFAULTS = {
   ],
   ccMonthlyCharges: {},
   customTags: ["reimbursable", "birthday", "travel", "emergency", "work"],
-  openingBalances: { "2026-05": { NARR: 0, SHIVU: 0, note: "First month tracked" } },
 };
 
 // Seed transactions derived from May_2026 sheet (Excel serial 46143 = 2026-05-01, etc.)

@@ -62,7 +62,6 @@ export function mergeData(data) {
     transactions,
     members: data.members || DEFAULTS.members,
     ccMonthlyCharges: data.ccMonthlyCharges || {},
-    openingBalances: data.openingBalances || DEFAULTS.openingBalances,
     customTags: data.customTags || DEFAULTS.customTags,
     variableSubCats: data.variableSubCats || DEFAULTS.variableSubCats,
     savings: data.savings || DEFAULTS.savings,

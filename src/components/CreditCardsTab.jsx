@@ -58,18 +58,15 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
         .reduce((a, t) => a + t.amount, 0);
       const memberCCOwed = memberCards.reduce((a, cc) => a + cc.currentBalance, 0);
 
-      // Opening balance for this member
-      const ob = s.openingBalances?.[`${activeYear}-${mNum(activeMonth)}`]?.[member] || 0;
-
-      // Current bank: opening + income - cash spends - CC payments already made
-      const currentBank = ob + memberIncome - memberCashSpend - memberCCPaid;
+      // Current bank: income this month - cash spends - CC payments already made
+      const currentBank = memberIncome - memberCashSpend - memberCCPaid;
       // Safe balance: current bank minus what still needs to be paid to CC
       const safeBalance = currentBank - memberCCOwed;
       const clr = [T.accent, T.purple][i % 2];
 
       return { member, memberIncome, memberCashSpend, memberCCPaid, memberCCOwed, currentBank, safeBalance, clr };
     });
-  }, [members, ccStats, transactions, activeYear, activeMonth, s.openingBalances]);
+  }, [members, ccStats, transactions, activeYear, activeMonth]);
 
   const CC_COLORS = [T.accent, T.purple, T.blue, T.amber, T.green];
 

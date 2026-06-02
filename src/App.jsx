@@ -92,10 +92,8 @@ export default function App() {
     );
   }, [getTxns, activeMonth, activeYear, isFirstTrackedMonth]);
 
-  const ob = s.openingBalances?.[monthKey(activeYear, activeMonth)] || {};
-  const openingTotal = members.reduce((a, m) => a + (ob[m] || 0), 0);
+  // Balance = this month's income minus all outflows (no opening balance)
   const currentBalance =
-    openingTotal +
     summary.income -
     summary.fixed -
     summary.variable -
@@ -176,16 +174,14 @@ export default function App() {
     () =>
       getVisibleMonths(activeYear).map((m) => {
         const t = summarize(getTxns(m, activeYear));
-        const ob2 = s.openingBalances?.[monthKey(activeYear, m)] || {};
         return {
           month: m,
           income: t.income,
           expenses: t.fixed + t.variable,
           savings: t.savings,
-          opening: members.reduce((a, mem) => a + (ob2[mem] || 0), 0),
         };
       }),
-    [getTxns, s.openingBalances, activeYear, members]
+    [getTxns, activeYear, members]
   );
 
   // FIX: only show FIXED + VARIABLE in spend breakdown (not CC payments or savings)
@@ -489,7 +485,6 @@ export default function App() {
             prevSummary={prevSummary}
             isFirstTrackedMonth={isFirstTrackedMonth}
             prevIdx={prevIdx}
-            openingTotal={openingTotal}
             currentBalance={currentBalance}
             totalCCOwed={totalCCOwed}
             safeBalance={safeBalance}
@@ -497,7 +492,6 @@ export default function App() {
             varStatus={varStatus}
             annualData={annualData}
             catBreakdown={catBreakdown}
-            ob={ob}
           />
         )}
         {tab === "transactions" && (
