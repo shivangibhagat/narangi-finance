@@ -289,29 +289,32 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
             </div>
 
             {/* ── Limit & utilization bar ── */}
-            {cc.limit > 0 && (
+            {!(cc.limit > 0) ? (
+              // No limit set — show a clear prompt
+              <div
+                onClick={() => { setEditCardId(cc.id); setEditCardVal({ name: cc.name, initialOutstanding: cc.initialOutstanding || 0, limit: "" }); }}
+                style={{ marginBottom: 14, padding: "12px 14px", background: T.amber + "12", border: `1px dashed ${T.amber}55`, borderRadius: 12, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+              >
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: T.amber }}>Credit Limit not set</div>
+                  <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>Tap to set your card limit to track usage</div>
+                </div>
+                <span style={{ fontSize: 18, color: T.amber }}>→</span>
+              </div>
+            ) : (
               <div style={{ marginBottom: 14, padding: "12px 14px", background: T.surface, borderRadius: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, alignItems: "center" }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>Credit Limit Usage</span>
                   <span style={{ fontSize: 12, fontWeight: 800, color: utilClr }}>{cc.utilPct}% used</span>
                 </div>
-
-                {/* Segmented bar: used | available */}
                 <div style={{ height: 10, background: T.border, borderRadius: 99, overflow: "hidden", marginBottom: 10 }}>
-                  <div style={{
-                    height: "100%",
-                    width: `${cc.utilPct}%`,
-                    background: `linear-gradient(90deg, ${utilClr}, ${utilClr}cc)`,
-                    borderRadius: 99,
-                    transition: "width 0.4s",
-                  }} />
+                  <div style={{ height: "100%", width: `${cc.utilPct}%`, background: `linear-gradient(90deg, ${utilClr}, ${utilClr}cc)`, borderRadius: 99, transition: "width 0.4s" }} />
                 </div>
-
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
                   {[
-                    { label: "Used", val: cc.currentBalance, color: utilClr },
+                    { label: "Used",      val: cc.currentBalance,  color: utilClr },
                     { label: "Available", val: cc.availableCredit, color: T.green },
-                    { label: "Limit", val: cc.limit, color: T.muted },
+                    { label: "Limit",     val: cc.limit,           color: T.muted },
                   ].map(cell => (
                     <div key={cell.label} style={{ textAlign: "center", padding: "8px 6px", background: T.card, borderRadius: 8 }}>
                       <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>{cell.label}</div>
@@ -319,17 +322,8 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
                     </div>
                   ))}
                 </div>
-
-                {cc.utilPct >= 90 && (
-                  <div style={{ marginTop: 10, padding: "8px 12px", background: T.rose + "18", borderRadius: 8, fontSize: 12, color: T.rose, fontWeight: 600 }}>
-                    🚨 You're at {cc.utilPct}% utilization — this hurts your credit score. Try to keep it under 30%.
-                  </div>
-                )}
-                {cc.utilPct >= 70 && cc.utilPct < 90 && (
-                  <div style={{ marginTop: 10, padding: "8px 12px", background: T.amber + "18", borderRadius: 8, fontSize: 12, color: T.amber, fontWeight: 600 }}>
-                    ⚠️ Getting high — ideally keep utilization under 30% for good credit health.
-                  </div>
-                )}
+                {cc.utilPct >= 90 && <div style={{ marginTop: 10, padding: "8px 12px", background: T.rose + "18", borderRadius: 8, fontSize: 12, color: T.rose, fontWeight: 600 }}>🚨 At {cc.utilPct}% utilization — try to keep under 30%.</div>}
+                {cc.utilPct >= 70 && cc.utilPct < 90 && <div style={{ marginTop: 10, padding: "8px 12px", background: T.amber + "18", borderRadius: 8, fontSize: 12, color: T.amber, fontWeight: 600 }}>⚠️ Getting high — ideally keep under 30%.</div>}
               </div>
             )}
 

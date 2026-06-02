@@ -16,22 +16,43 @@ export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transa
   const iSt={...iSty,fontSize:13,padding:"8px 10px"};
 
   const monthTxns=useMemo(()=>transactions.filter(t=>t.date.startsWith(`${activeYear}-${mNum(activeMonth)}`)),[transactions,activeMonth,activeYear]);
-  // Robust per-item actual computation — matches by subCat OR label (handles both
-  // imported transactions that use subCat and manually entered ones that use label)
-  const getItemActual = (cat, item) => {
-    const canon = (item.subCat || "").trim().toUpperCase();
-    const lbl   = (item.label  || "").trim().toUpperCase();
+  const members = s.members || DEFAULTS.members;
+
+  // Income: match by person — "NARR Salary" item → all INCOME txns where person===NARR.
+  // Person is always set correctly; subCat is not reliable (users may have wrong values).
+  const incomeByPerson = useMemo(() => {
+    const m = {};
+    members.forEach(mem => {
+      m[mem] = monthTxns
+        .filter(t => t.category === "INCOME" && t.person === mem)
+        .reduce((a, t) => a + t.amount, 0);
+    });
+    return m;
+  }, [monthTxns, members]);
+
+  const getIncomePerson = (inc) =>
+    members.find(m =>
+      (inc.label  || "").toUpperCase().includes(m.toUpperCase()) ||
+      (inc.subCat || "").toUpperCase().includes(m.toUpperCase())
+    ) || null;
+
+  // Fixed expenses: match by subCat OR label (both patterns exist in real data)
+  const getFixedActual = (fe) => {
+    const canon = (fe.subCat || "").trim().toUpperCase();
+    const lbl   = (fe.label  || "").trim().toUpperCase();
     return monthTxns
-      .filter(t => t.category === cat)
+      .filter(t => t.category === "FIXED EXPENSES")
       .filter(t => {
         const sc = (t.subCat || "").trim().toUpperCase();
         return (canon && sc === canon) || (lbl && sc === lbl);
       })
       .reduce((a, t) => a + t.amount, 0);
   };
-  const fixedActuals  = useMemo(() => Object.fromEntries((s.fixedExpenses||[]).map(fe => [fe.id, getItemActual("FIXED EXPENSES", fe)])), [monthTxns, s.fixedExpenses]);
-  const incomeActuals = useMemo(() => Object.fromEntries((s.income||[]).map(inc => [inc.id, getItemActual("INCOME", inc)])), [monthTxns, s.income]);
-  const varActual=useMemo(()=>monthTxns.filter(t=>t.category==="VARIABLE EXPENSES").reduce((a,t)=>a+t.amount,0),[monthTxns]);
+  const fixedActuals = useMemo(
+    () => Object.fromEntries((s.fixedExpenses || []).map(fe => [fe.id, getFixedActual(fe)])),
+    [monthTxns, s.fixedExpenses]
+  );
+  const varActual = useMemo(() => monthTxns.filter(t => t.category === "VARIABLE EXPENSES").reduce((a, t) => a + t.amount, 0), [monthTxns]);
   const savingsProgress=useMemo(()=>{ const mp={}; monthTxns.filter(t=>t.category==="SAVINGS").forEach(t=>{mp[t.subCat]=(mp[t.subCat]||0)+t.amount;}); return mp; },[monthTxns]);
   const savingsProgressAll=useMemo(()=>{ const mp={}; transactions.filter(t=>t.category==="SAVINGS").forEach(t=>{mp[t.subCat]=(mp[t.subCat]||0)+t.amount;}); return mp; },[transactions]);
 
@@ -78,7 +99,7 @@ export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transa
                     <button onClick={()=>{if(confirmDel(inc.label)) updNow({income:(s.income||[]).filter(i=>i.id!==inc.id)});}} style={{background:"transparent",border:"none",color:T.rose,cursor:"pointer",fontSize:18,padding:"4px",WebkitTapHighlightColor:"transparent"}}>🗑</button>
                   </div>
                 </div>
-                <ActualBar budget={inc.amount} actual={incomeActuals[inc.id]||0} color={T.accent}/>
+                <ActualBar budget={inc.amount} actual={(() => { const p = getIncomePerson(inc); return p ? (incomeByPerson[p] || 0) : 0; })()} color={T.accent}/>
               </>
             )}
           </div>
