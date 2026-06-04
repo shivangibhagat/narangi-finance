@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "../firebase";
-import { DEFAULTS, SEED } from "../constants/defaults";
+import { DEFAULTS } from "../constants/defaults";
 import { mergeData, cleanForDb } from "../utils/finance";
 
 export const FIRESTORE_DOC = doc(db, "narangi-finance", "shared-data");
 
 export function useFirestoreSync(user) {
-  const [s, setS] = useState({ ...DEFAULTS, transactions: SEED });
+  const [s, setS] = useState({ ...DEFAULTS, transactions: [] });
   const [loaded, setLoaded] = useState(false);
   const [syncStatus, setSyncStatus] = useState("connecting");
   const isRemote = useRef(false);
@@ -20,7 +20,7 @@ export function useFirestoreSync(user) {
     isRemote.current = true;
     if (snap.exists()) setS(mergeData(snap.data()));
     else {
-      const init = { ...DEFAULTS, transactions: SEED };
+      const init = { ...DEFAULTS, transactions: [] };
       setDoc(FIRESTORE_DOC, cleanForDb(init));
       setS(init);
     }
