@@ -475,7 +475,6 @@ export default function App() {
         {tab === "dashboard" && (
           <DashboardTab
             s={s}
-            updNow={updNow}
             activeYear={activeYear}
             activeMonth={activeMonth}
             isMobile={isMobile}
