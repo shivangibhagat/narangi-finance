@@ -16,6 +16,7 @@ export function DashboardTab({
   isFirstTrackedMonth,
   prevIdx,
   currentBalance,
+  ccChargedExpenses = 0,
   totalCCOwed = 0,
   safeBalance,
   varPct,
@@ -30,7 +31,10 @@ export function DashboardTab({
     { label: "Income",   val: summary.income,             prev: prevSummary.income,   color: T.accent, icon: "↑" },
     { label: "Fixed",    val: summary.fixed,              prev: prevSummary.fixed,    color: T.blue,   icon: "🔒" },
     { label: "Variable", val: summary.variable,           prev: prevSummary.variable, color: varStatus, icon: "📊" },
-    { label: "Balance",  val: currentBalance,             color: currentBalance >= 0 ? T.green : T.rose, icon: "💰" },
+    { label: "Balance",  val: currentBalance, color: currentBalance >= 0 ? T.green : T.rose, icon: "💰",
+      sub: ccChargedExpenses > 0
+        ? `💳 ₹${(ccChargedExpenses/1000).toFixed(0)}k on CC · 💵 ₹${((summary.fixed+summary.variable-ccChargedExpenses)/1000).toFixed(0)}k cash`
+        : null },
   ];
 
   return (
@@ -77,6 +81,9 @@ export function DashboardTab({
               <div style={{ fontSize: isMobile ? 17 : 20, fontWeight: 800, color: k.color }}>
                 {fmt(k.val)}
               </div>
+              {k.sub && (
+                <div style={{ fontSize: 10, color: T.muted, marginTop: 4, lineHeight: 1.4 }}>{k.sub}</div>
+              )}
               {delta != null && (
                 <span style={{
                   fontSize: 10, fontWeight: 700,

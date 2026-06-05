@@ -19,10 +19,15 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
 
   // ── Simple per-card stats: balance stored on card + payments this month ─────
   const ccStats = useMemo(() => (s.creditCards || []).map(cc => {
-    const balance    = cc.balance || 0;                          // current outstanding
+    const balance    = cc.balance || 0;
     const paid       = getTxns(activeMonth, activeYear)
       .filter(t => ccPaymentMatchesCard(t, cc))
       .reduce((a, t) => a + t.amount, 0);
+    // CC-charged expenses by this card's person this month
+    const charged    = getTxns(activeMonth, activeYear)
+      .filter(t => ["FIXED EXPENSES","VARIABLE EXPENSES"].includes(t.category) && t.paidByCC && t.person === cc.person)
+      .reduce((a, t) => a + t.amount, 0);
+    const cashback   = cc.cashbackRate > 0 ? Math.round(charged * cc.cashbackRate / 100) : 0;
     const utilPct    = cc.limit > 0 ? Math.min(100, Math.round((balance / cc.limit) * 100)) : 0;
     const available  = cc.limit > 0 ? Math.max(0, cc.limit - balance) : null;
     const utilClr    = utilPct >= 90 ? T.rose : utilPct >= 70 ? T.amber : T.green;
@@ -30,7 +35,7 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
       .filter(t => ccPaymentMatchesCard(t, cc))
       .sort((a, b) => b.date.localeCompare(a.date))
       .slice(0, 4);
-    return { ...cc, balance, paid, utilPct, available, utilClr, recentPmts };
+    return { ...cc, balance, paid, charged, cashback, utilPct, available, utilClr, recentPmts };
   }), [s.creditCards, transactions, activeMonth, activeYear, getTxns]);
 
   const totOwed  = ccStats.reduce((a, c) => a + c.balance, 0);
@@ -108,7 +113,7 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
               </div>
               {!isEditing && (
                 <div style={{ display:"flex", gap:8 }}>
-                  <button onClick={() => { setEditId(cc.id); setEditVal({ name:cc.name, balance:cc.balance||0, limit:cc.limit||0 }); }} style={{ background:"transparent", border:"none", color:T.blue, cursor:"pointer", fontSize:20, WebkitTapHighlightColor:"transparent" }}>✏️</button>
+                  <button onClick={() => { setEditId(cc.id); setEditVal({ name:cc.name, balance:cc.balance||0, limit:cc.limit||0, cashbackRate:cc.cashbackRate||"" }); }} style={{ background:"transparent", border:"none", color:T.blue, cursor:"pointer", fontSize:20, WebkitTapHighlightColor:"transparent" }}>✏️</button>
                   <button onClick={() => deleteCard(cc.id)} style={{ background:"transparent", border:"none", color:T.rose, cursor:"pointer", fontSize:20, WebkitTapHighlightColor:"transparent" }}>🗑</button>
                 </div>
               )}
@@ -124,6 +129,15 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
                     <TI label="Current Balance ₹" type="number" value={String(editVal.balance||"")} onChange={v => setEditVal(e=>({...e,balance:v}))} placeholder="0" />
                     <TI label="Credit Limit ₹"    type="number" value={String(editVal.limit||"")}   onChange={v => setEditVal(e=>({...e,limit:v}))}   placeholder="0" />
                   </div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                    <TI label="Cashback Rate %" type="number" value={String(editVal.cashbackRate||"")} onChange={v => setEditVal(e=>({...e,cashbackRate:v}))} placeholder="e.g. 1.5" />
+                    <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                      <div style={{ fontSize:10, color:T.muted, fontWeight:700, textTransform:"uppercase" }}>Est. Cashback</div>
+                      <div style={{ fontSize:14, fontWeight:800, color:T.green, paddingTop:8 }}>
+                        {editVal.cashbackRate > 0 ? `~${(editVal.cashbackRate||0)}% per ₹100` : "—"}
+                      </div>
+                    </div>
+                  </div>
                   <div style={{ fontSize:11, color:T.muted, background:T.card, borderRadius:8, padding:"8px 12px" }}>
                     💡 Update balance whenever you get your CC statement
                   </div>
@@ -138,6 +152,23 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
             {/* Balance + Limit bar */}
             {!isEditing && (
               <>
+                {/* Cashback earned this month */}
+                {(cc.charged > 0 || cc.cashbackRate > 0) && (
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", background:T.green+"10", border:`1px solid ${T.green}25`, borderRadius:10, marginBottom:12 }}>
+                    <div>
+                      <div style={{ fontSize:11, color:T.muted, fontWeight:700, textTransform:"uppercase" }}>CC Charged This Month</div>
+                      <div style={{ fontSize:16, fontWeight:800, color:T.text }}>{fmt(cc.charged)}</div>
+                    </div>
+                    {cc.cashbackRate > 0 && (
+                      <div style={{ textAlign:"right" }}>
+                        <div style={{ fontSize:11, color:T.muted, fontWeight:700, textTransform:"uppercase" }}>Est. Cashback</div>
+                        <div style={{ fontSize:16, fontWeight:800, color:T.green }}>+{fmt(cc.cashback)}</div>
+                        <div style={{ fontSize:10, color:T.muted }}>{cc.cashbackRate}%</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Big balance display */}
                 <div style={{ background:T.surface, borderRadius:12, padding:"14px 16px", marginBottom:12 }}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: cc.limit > 0 ? 12 : 0 }}>
@@ -178,7 +209,7 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
                   )}
 
                   {!cc.limit && (
-                    <button onClick={() => { setEditId(cc.id); setEditVal({ name:cc.name, balance:cc.balance||0, limit:"" }); }} style={{ marginTop:10, width:"100%", padding:"8px", background:T.amber+"12", border:`1px dashed ${T.amber}55`, borderRadius:8, color:T.amber, fontWeight:600, fontSize:12, cursor:"pointer" }}>
+                    <button onClick={() => { setEditId(cc.id); setEditVal({ name:cc.name, balance:cc.balance||0, limit:"", cashbackRate:cc.cashbackRate||"" }); }} style={{ marginTop:10, width:"100%", padding:"8px", background:T.amber+"12", border:`1px dashed ${T.amber}55`, borderRadius:8, color:T.amber, fontWeight:600, fontSize:12, cursor:"pointer" }}>
                       + Set credit limit to track utilization →
                     </button>
                   )}
@@ -238,11 +269,12 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
               <TI label="Current Balance ₹" type="number" value={newCard.balance} onChange={v=>setNewCard(c=>({...c,balance:v}))} placeholder="0" />
               <TI label="Credit Limit ₹"    type="number" value={newCard.limit}   onChange={v=>setNewCard(c=>({...c,limit:v}))}   placeholder="0" />
             </div>
+            <TI label="Cashback Rate % (optional)" type="number" value={newCard.cashbackRate||""} onChange={v=>setNewCard(c=>({...c,cashbackRate:v}))} placeholder="e.g. 1.5" />
             <div style={{ fontSize:11, color:T.muted, padding:"8px 12px", background:T.surface, borderRadius:8 }}>
               💡 Enter what you currently owe. Update it anytime from your statement.
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginTop:4 }}>
-              <button onClick={() => { if (!newCard.name) return; updNow({ creditCards:[...(s.creditCards||[]),{id:uid(),name:newCard.name,person:newCard.person,balance:+newCard.balance||0,limit:+newCard.limit||0}] }); setNewCard({name:"",person:members[0],balance:"",limit:""}); setShowAdd(false); }} style={{ background:T.accent, border:"none", color:T.bg, borderRadius:10, padding:12, fontWeight:700, cursor:"pointer" }}>Add Card</button>
+              <button onClick={() => { if (!newCard.name) return; updNow({ creditCards:[...(s.creditCards||[]),{id:uid(),name:newCard.name,person:newCard.person,balance:+newCard.balance||0,limit:+newCard.limit||0,cashbackRate:+newCard.cashbackRate||0}] }); setNewCard({name:"",person:members[0],balance:"",limit:"",cashbackRate:""}); setShowAdd(false); }} style={{ background:T.accent, border:"none", color:T.bg, borderRadius:10, padding:12, fontWeight:700, cursor:"pointer" }}>Add Card</button>
               <button onClick={()=>setShowAdd(false)} style={{ background:"transparent", border:`1px solid ${T.border}`, color:T.muted, borderRadius:10, padding:12, fontWeight:700, cursor:"pointer" }}>Cancel</button>
             </div>
           </div>

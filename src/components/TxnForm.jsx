@@ -249,6 +249,47 @@ export function TxnForm({ state, value, onChange, onSubmit, submitLabel = "Add T
       {/* Note */}
       <TI label="Note (optional)" value={value.note || ""} onChange={v => upd({ note: v })} placeholder="Any details..." />
 
+      {/* Paid by CC toggle — only for expense categories when CC cards exist */}
+      {["FIXED EXPENSES", "VARIABLE EXPENSES"].includes(value.category) && (state.creditCards || []).length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <Lbl>Payment Method</Lbl>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[
+              { label: "💳 Credit Card", val: true  },
+              { label: "💵 Cash / UPI",  val: false },
+            ].map(opt => {
+              const active = !!value.paidByCC === opt.val;
+              return (
+                <button
+                  key={String(opt.val)}
+                  onClick={() => upd({ paidByCC: opt.val })}
+                  style={{
+                    flex: 1,
+                    padding: "10px 0",
+                    borderRadius: 10,
+                    border: `2px solid ${active ? T.accent : T.border}`,
+                    background: active ? T.accent + "22" : "transparent",
+                    color: active ? T.accent : T.muted,
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: "pointer",
+                    WebkitTapHighlightColor: "transparent",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+          {value.paidByCC && (
+            <div style={{ fontSize: 11, color: T.muted, padding: "6px 10px", background: T.surface, borderRadius: 8 }}>
+              💡 Won't reduce bank balance — covered when you pay your CC bill
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Tags */}
       {(state.customTags || []).length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>

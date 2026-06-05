@@ -61,6 +61,7 @@ export default function App() {
     person: (s.members || DEFAULTS.members)[0],
     note: "",
     tags: [],
+    paidByCC: true,   // default true — most expenses go on CC
   });
 
   useOutsideClick(yearPickerRef, useCallback(() => setShowYearPicker(false), []));
@@ -92,11 +93,18 @@ export default function App() {
     );
   }, [getTxns, activeMonth, activeYear, isFirstTrackedMonth]);
 
-  // Balance = this month's income minus all outflows (no opening balance)
+  // Expenses that actually left the bank (not on CC — those leave only when the CC bill is paid)
+  const ccChargedExpenses = useMemo(() =>
+    monthTxns
+      .filter(t => ["FIXED EXPENSES","VARIABLE EXPENSES"].includes(t.category) && t.paidByCC)
+      .reduce((a, t) => a + t.amount, 0),
+    [monthTxns]
+  );
+
+  // Bank balance: only direct cash/UPI expenses reduce it; CC purchases are covered by CC bill payment
   const currentBalance =
     summary.income -
-    summary.fixed -
-    summary.variable -
+    (summary.fixed + summary.variable - ccChargedExpenses) -
     summary.ccPaid -
     summary.savings;
   // Total CC owed = sum of each card's stored balance (user updates after each statement)
@@ -479,6 +487,7 @@ export default function App() {
             isFirstTrackedMonth={isFirstTrackedMonth}
             prevIdx={prevIdx}
             currentBalance={currentBalance}
+            ccChargedExpenses={ccChargedExpenses}
             totalCCOwed={totalCCOwed}
             safeBalance={safeBalance}
             varPct={varPct}
