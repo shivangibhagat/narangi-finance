@@ -249,46 +249,99 @@ export function TxnForm({ state, value, onChange, onSubmit, submitLabel = "Add T
       {/* Note */}
       <TI label="Note (optional)" value={value.note || ""} onChange={v => upd({ note: v })} placeholder="Any details..." />
 
-      {/* Paid by CC toggle — only for expense categories when CC cards exist */}
-      {["FIXED EXPENSES", "VARIABLE EXPENSES"].includes(value.category) && (state.creditCards || []).length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <Lbl>Payment Method</Lbl>
-          <div style={{ display: "flex", gap: 8 }}>
-            {[
-              { label: "💳 Credit Card", val: true  },
-              { label: "💵 Cash / UPI",  val: false },
-            ].map(opt => {
-              const active = !!value.paidByCC === opt.val;
-              return (
-                <button
-                  key={String(opt.val)}
-                  onClick={() => upd({ paidByCC: opt.val })}
-                  style={{
-                    flex: 1,
-                    padding: "10px 0",
-                    borderRadius: 10,
-                    border: `2px solid ${active ? T.accent : T.border}`,
-                    background: active ? T.accent + "22" : "transparent",
-                    color: active ? T.accent : T.muted,
-                    fontWeight: 700,
-                    fontSize: 13,
-                    cursor: "pointer",
-                    WebkitTapHighlightColor: "transparent",
-                    transition: "all 0.15s",
-                  }}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
-          </div>
-          {value.paidByCC && (
-            <div style={{ fontSize: 11, color: T.muted, padding: "6px 10px", background: T.surface, borderRadius: 8 }}>
-              💡 Won't reduce bank balance — covered when you pay your CC bill
+      {/* Paid by — card chips + Cash option */}
+      {["FIXED EXPENSES", "VARIABLE EXPENSES"].includes(value.category) && (state.creditCards || []).length > 0 && (() => {
+        const cards   = state.creditCards || [];
+        const mems    = state.members || members;
+        const cardClr = (cc) => {
+          const idx = mems.indexOf(cc.person);
+          return idx === 0 ? T.accent : idx === 1 ? T.purple : T.blue;
+        };
+        const selectedId  = value.paidByCCId || null;
+        const isCash      = !selectedId && !value.paidByCC;
+        const selectedCard = cards.find(c => c.id === selectedId);
+
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <Lbl>Paid By</Lbl>
+
+            {/* Scrollable row: Cash + all CC cards */}
+            <div style={{
+              display: "flex",
+              gap: 8,
+              overflowX: "auto",
+              WebkitOverflowScrolling: "touch",
+              paddingBottom: 4,
+            }}>
+              {/* Cash / UPI chip */}
+              <button
+                onClick={() => upd({ paidByCC: false, paidByCCId: null })}
+                style={{
+                  flexShrink: 0,
+                  padding: "9px 16px",
+                  borderRadius: 10,
+                  border: `2px solid ${isCash ? T.muted : T.border}`,
+                  background: isCash ? T.muted + "22" : "transparent",
+                  color: isCash ? T.text : T.muted,
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  WebkitTapHighlightColor: "transparent",
+                  transition: "all 0.15s",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                💵 Cash / UPI
+              </button>
+
+              {/* One chip per CC card */}
+              {cards.map(cc => {
+                const clr    = cardClr(cc);
+                const active = selectedId === cc.id;
+                return (
+                  <button
+                    key={cc.id}
+                    onClick={() => upd({ paidByCC: true, paidByCCId: cc.id })}
+                    style={{
+                      flexShrink: 0,
+                      padding: "9px 16px",
+                      borderRadius: 10,
+                      border: `2px solid ${active ? clr : T.border}`,
+                      background: active ? clr + "22" : "transparent",
+                      color: active ? clr : T.muted,
+                      fontWeight: 700,
+                      fontSize: 13,
+                      cursor: "pointer",
+                      WebkitTapHighlightColor: "transparent",
+                      transition: "all 0.15s",
+                      whiteSpace: "nowrap",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-start",
+                      gap: 1,
+                    }}
+                  >
+                    <span>💳 {cc.name}</span>
+                    <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.75 }}>{cc.person}</span>
+                  </button>
+                );
+              })}
             </div>
-          )}
-        </div>
-      )}
+
+            {/* Hint when a CC card is selected */}
+            {selectedCard && (
+              <div style={{ fontSize: 11, color: T.muted, padding: "6px 10px", background: T.surface, borderRadius: 8, display: "flex", justifyContent: "space-between" }}>
+                <span>💡 Won't reduce bank balance — covered when you pay your {selectedCard.name} bill</span>
+                {selectedCard.cashbackRate > 0 && value.amount > 0 && (
+                  <span style={{ color: T.green, fontWeight: 700, marginLeft: 8, flexShrink: 0 }}>
+                    ~+₹{Math.round(parseFloat(value.amount || 0) * selectedCard.cashbackRate / 100)} cashback
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Tags */}
       {(state.customTags || []).length > 0 && (

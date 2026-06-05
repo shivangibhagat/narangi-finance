@@ -219,6 +219,10 @@ export function TransactionsTab({ s, addTxn, delTxn, editTxn, setEditTxn, saveEd
                           <span style={{ color: catClr, fontWeight: 600 }}>{t.subCat}</span>
                           <span>·</span>
                           <span style={{ color: personClr, fontWeight: 600 }}>{t.person}</span>
+                          {t.paidByCCId && (() => {
+                            const card = (s.creditCards || []).find(c => c.id === t.paidByCCId);
+                            return card ? <><span>·</span><span style={{ color: T.muted }}>💳 {card.name}</span></> : null;
+                          })()}
                           {t.note && <><span>·</span><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 100 }}>{t.note}</span></>}
                         </div>
                         {(t.tags || []).length > 0 && (

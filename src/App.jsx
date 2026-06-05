@@ -61,7 +61,8 @@ export default function App() {
     person: (s.members || DEFAULTS.members)[0],
     note: "",
     tags: [],
-    paidByCC: true,   // default true — most expenses go on CC
+    paidByCC: true,
+    paidByCCId: null,   // which specific card (null = not yet chosen)
   });
 
   useOutsideClick(yearPickerRef, useCallback(() => setShowYearPicker(false), []));
@@ -93,10 +94,11 @@ export default function App() {
     );
   }, [getTxns, activeMonth, activeYear, isFirstTrackedMonth]);
 
-  // Expenses that actually left the bank (not on CC — those leave only when the CC bill is paid)
+  // Expenses charged to a CC card — don't reduce bank directly (covered by CC bill payment)
+  // Checks paidByCCId (new, specific card) or paidByCC (old boolean) for backward compat
   const ccChargedExpenses = useMemo(() =>
     monthTxns
-      .filter(t => ["FIXED EXPENSES","VARIABLE EXPENSES"].includes(t.category) && t.paidByCC)
+      .filter(t => ["FIXED EXPENSES","VARIABLE EXPENSES"].includes(t.category) && (t.paidByCCId || t.paidByCC))
       .reduce((a, t) => a + t.amount, 0),
     [monthTxns]
   );

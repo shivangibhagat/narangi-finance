@@ -23,9 +23,9 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
     const paid       = getTxns(activeMonth, activeYear)
       .filter(t => ccPaymentMatchesCard(t, cc))
       .reduce((a, t) => a + t.amount, 0);
-    // CC-charged expenses by this card's person this month
+    // Expenses specifically charged to this card this month
     const charged    = getTxns(activeMonth, activeYear)
-      .filter(t => ["FIXED EXPENSES","VARIABLE EXPENSES"].includes(t.category) && t.paidByCC && t.person === cc.person)
+      .filter(t => ["FIXED EXPENSES","VARIABLE EXPENSES"].includes(t.category) && t.paidByCCId === cc.id)
       .reduce((a, t) => a + t.amount, 0);
     const cashback   = cc.cashbackRate > 0 ? Math.round(charged * cc.cashbackRate / 100) : 0;
     const utilPct    = cc.limit > 0 ? Math.min(100, Math.round((balance / cc.limit) * 100)) : 0;
