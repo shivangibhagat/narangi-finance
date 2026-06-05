@@ -12,8 +12,8 @@ import {
   TABS,
 } from "./constants/theme";
 import { DEFAULTS } from "./constants/defaults";
-import { mNum, monthKey, ccKey, uid, confirmDel } from "./utils/format";
-import { summarize, computeCCBalance, ccPaymentMatchesCard } from "./utils/finance";
+import { mNum, monthKey, uid, confirmDel } from "./utils/format";
+import { summarize, ccPaymentMatchesCard } from "./utils/finance";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { useOutsideClick } from "./hooks/useOutsideClick";
 import { useFirestoreSync } from "./hooks/useFirestoreSync";
@@ -99,17 +99,11 @@ export default function App() {
     summary.variable -
     summary.ccPaid -
     summary.savings;
-  // Total CC debt still owed this month (opening balance + charges − payments)
-  const totalCCOwed = useMemo(() => {
-    return (s.creditCards || []).reduce((total, cc) => {
-      const opening = computeCCBalance(cc, activeYear, activeMonth, s.transactions || [], s.ccMonthlyCharges);
-      const charges = (s.ccMonthlyCharges || {})[ccKey(cc.id, activeYear, activeMonth)] || 0;
-      const paid = getTxns(activeMonth, activeYear)
-        .filter(t => ccPaymentMatchesCard(t, cc))
-        .reduce((a, t) => a + t.amount, 0);
-      return total + Math.max(0, opening + charges - paid);
-    }, 0);
-  }, [s.creditCards, s.ccMonthlyCharges, s.transactions, activeYear, activeMonth, getTxns]);
+  // Total CC owed = sum of each card's stored balance (user updates after each statement)
+  const totalCCOwed = useMemo(
+    () => (s.creditCards || []).reduce((a, cc) => a + (cc.balance || 0), 0),
+    [s.creditCards]
+  );
 
   // What's truly safe to spend once all CC bills are paid
   const safeBalance = currentBalance - totalCCOwed;
