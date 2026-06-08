@@ -40,7 +40,6 @@ export const getVisibleMonths = (year) =>
   year === START_YEAR ? MONTHS.slice(START_MONTH_IDX) : MONTHS;
 
 export const TABS = [
-  { id: "dashboard", icon: "📊", label: "Dashboard" },
   { id: "transactions", icon: "📋", label: "Txns" },
   { id: "plan", icon: "🎯", label: "Plan" },
   { id: "credit cards", icon: "💳", label: "Cards" },

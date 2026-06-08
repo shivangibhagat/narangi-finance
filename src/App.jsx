@@ -21,7 +21,6 @@ import { Modal, LoadingScreen, ConnectingScreen } from "./components/ui/primitiv
 import { LoginScreen } from "./components/LoginScreen";
 import { TxnForm } from "./components/TxnForm";
 import { ImportModal } from "./components/ImportModal";
-import { DashboardTab } from "./components/DashboardTab";
 import { TransactionsTab } from "./components/TransactionsTab";
 import { PlanTab } from "./components/PlanTab";
 import { CreditCardsTab } from "./components/CreditCardsTab";
@@ -40,7 +39,7 @@ export default function App() {
 
   const { s, setS, loaded, syncStatus, upd, updNow, saveNow } = useFirestoreSync(user);
 
-  const [tab, setTab] = useState("dashboard");
+  const [tab, setTab] = useState("transactions");
   const [activeYear, setActiveYear] = useState(2026);
   const [activeMonth, setActiveMonth] = useState("May");
   const [showQuickAdd, setShowQuickAdd] = useState(false);
@@ -85,17 +84,7 @@ export default function App() {
     [getTxns, activeMonth, activeYear]
   );
   const summary = useMemo(() => summarize(monthTxns), [monthTxns]);
-  const prevIdx = MONTHS.indexOf(activeMonth) - 1;
-  const isFirstTrackedMonth = activeYear === START_YEAR && activeMonth === START_MONTH;
-  const prevSummary = useMemo(() => {
-    if (isFirstTrackedMonth) return { income: 0, fixed: 0, variable: 0, savings: 0, ccPaid: 0 };
-    return summarize(
-      prevIdx >= 0 ? getTxns(MONTHS[prevIdx], activeYear) : getTxns("Dec", activeYear - 1)
-    );
-  }, [getTxns, activeMonth, activeYear, isFirstTrackedMonth]);
-
   // Expenses charged to a CC card — don't reduce bank directly (covered by CC bill payment)
-  // Checks paidByCCId (new, specific card) or paidByCC (old boolean) for backward compat
   const ccChargedExpenses = useMemo(() =>
     monthTxns
       .filter(t => ["FIXED EXPENSES","VARIABLE EXPENSES"].includes(t.category) && (t.paidByCCId || t.paidByCC))
@@ -103,27 +92,22 @@ export default function App() {
     [monthTxns]
   );
 
-  // Bank balance: only direct cash/UPI expenses reduce it; CC purchases are covered by CC bill payment
+  // Bank balance this month (used by CreditCardsTab safe-balance panel)
   const currentBalance =
     summary.income -
     (summary.fixed + summary.variable - ccChargedExpenses) -
     summary.ccPaid -
     summary.savings;
-  // Total CC owed = sum of each card's stored balance (user updates after each statement)
+
+  // Total CC owed = sum of each card's stored balance
   const totalCCOwed = useMemo(
     () => (s.creditCards || []).reduce((a, cc) => a + (cc.balance || 0), 0),
     [s.creditCards]
   );
 
-  // What's truly safe to spend once all CC bills are paid
-  const safeBalance = currentBalance - totalCCOwed;
-
-  const totalIncome = (s.income || []).reduce((a, i) => a + i.amount, 0);
-  const totalFixed = (s.fixedExpenses || []).reduce((a, f) => a + f.budget, 0);
-  const totalSavings = (s.savings || []).reduce((a, sv) => a + sv.monthlyTarget, 0);
-  const varPct =
-    s.variableBudget > 0 ? Math.round((summary.variable / s.variableBudget) * 100) : 0;
-  const varStatus = varPct >= 100 ? T.rose : varPct >= 80 ? T.amber : T.green;
+  const totalIncome  = (s.income        || []).reduce((a, i)  => a + i.amount,       0);
+  const totalFixed   = (s.fixedExpenses || []).reduce((a, f)  => a + f.budget,        0);
+  const totalSavings = (s.savings       || []).reduce((a, sv) => a + sv.monthlyTarget, 0);
 
   const addTxn = useCallback(
     (form) => {
@@ -173,33 +157,6 @@ export default function App() {
     },
     [s, saveNow, setS]
   );
-
-  const annualData = useMemo(
-    () =>
-      getVisibleMonths(activeYear).map((m) => {
-        const t = summarize(getTxns(m, activeYear));
-        return {
-          month: m,
-          income: t.income,
-          expenses: t.fixed + t.variable,
-          savings: t.savings,
-        };
-      }),
-    [getTxns, activeYear, members]
-  );
-
-  // FIX: only show FIXED + VARIABLE in spend breakdown (not CC payments or savings)
-  const catBreakdown = useMemo(() => {
-    const grp = {};
-    monthTxns
-      .filter((t) => t.category === "FIXED EXPENSES" || t.category === "VARIABLE EXPENSES")
-      .forEach((t) => {
-        grp[t.subCat] = (grp[t.subCat] || 0) + t.amount;
-      });
-    return Object.entries(grp)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, value]) => ({ name, value }));
-  }, [monthTxns]);
 
   const syncDot = { live: T.green, saving: T.amber, connecting: T.muted, error: T.rose }[
     syncStatus
@@ -476,28 +433,6 @@ export default function App() {
       </div>
 
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: `${p}px` }}>
-        {tab === "dashboard" && (
-          <DashboardTab
-            s={s}
-            activeYear={activeYear}
-            activeMonth={activeMonth}
-            isMobile={isMobile}
-            members={members}
-            monthTxns={monthTxns}
-            summary={summary}
-            prevSummary={prevSummary}
-            isFirstTrackedMonth={isFirstTrackedMonth}
-            prevIdx={prevIdx}
-            currentBalance={currentBalance}
-            ccChargedExpenses={ccChargedExpenses}
-            totalCCOwed={totalCCOwed}
-            safeBalance={safeBalance}
-            varPct={varPct}
-            varStatus={varStatus}
-            annualData={annualData}
-            catBreakdown={catBreakdown}
-          />
-        )}
         {tab === "transactions" && (
           <TransactionsTab
             s={s}
