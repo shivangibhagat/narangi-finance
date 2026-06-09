@@ -12,7 +12,7 @@ import {
   TABS,
 } from "./constants/theme";
 import { DEFAULTS } from "./constants/defaults";
-import { mNum, monthKey, uid, confirmDel } from "./utils/format";
+import { mNum, uid, confirmDel } from "./utils/format";
 import { summarize, ccPaymentMatchesCard } from "./utils/finance";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { useOutsideClick } from "./hooks/useOutsideClick";
@@ -51,17 +51,19 @@ export default function App() {
   const yearPickerRef = useRef(null);
 
   const defaultDate = `${activeYear}-${mNum(activeMonth)}-01`;
+  const defaultMember = (s.members || DEFAULTS.members)[0];
+  const defaultCard = (s.creditCards || []).find(cc => cc.person === defaultMember) || (s.creditCards || [])[0] || null;
   const [quickForm, setQuickForm] = useState({
     date: defaultDate,
     category: "VARIABLE EXPENSES",
     subCat: "CAFES/RESTAURANTS",
     spentOn: "",
     amount: "",
-    person: (s.members || DEFAULTS.members)[0],
+    person: defaultMember,
     note: "",
     tags: [],
-    paidByCC: true,
-    paidByCCId: null,   // which specific card (null = not yet chosen)
+    paidByCC: !!defaultCard,
+    paidByCCId: defaultCard?.id || null,
   });
 
   useOutsideClick(yearPickerRef, useCallback(() => setShowYearPicker(false), []));

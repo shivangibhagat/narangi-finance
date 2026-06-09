@@ -47,6 +47,23 @@ describe("mergeData()", () => {
     const d = mergeData({});
     expect(d.openingBalances).toBeUndefined();
   });
+
+  it("strips ccMonthlyCharges (legacy field)", () => {
+    const d = mergeData({ ccMonthlyCharges: { "cc1_2026-05": 50000 } });
+    expect(d.ccMonthlyCharges).toBeUndefined();
+  });
+
+  it("migrates initialOutstanding → balance for old CC data", () => {
+    const cards = [{ id:"cc1", name:"Test", person:"NARR", initialOutstanding:75000 }];
+    const d = mergeData({ creditCards: cards });
+    expect(d.creditCards[0].balance).toBe(75000);
+  });
+
+  it("prefers balance over initialOutstanding if both present", () => {
+    const cards = [{ id:"cc1", name:"Test", person:"NARR", balance:90000, initialOutstanding:75000 }];
+    const d = mergeData({ creditCards: cards });
+    expect(d.creditCards[0].balance).toBe(90000);
+  });
 });
 
 // ─── CC utilization % ─────────────────────────────────────────────────────────

@@ -44,9 +44,10 @@ export function computeCCBalance(cc, upToYear, upToMonth, transactions, ccMonthl
 }
 
 export function mergeData(data) {
+  // Migrate old initialOutstanding / outstanding → balance (simplified CC model)
   const creditCards = (data.creditCards || DEFAULTS.creditCards).map((cc) => ({
     ...cc,
-    initialOutstanding: cc.initialOutstanding ?? cc.outstanding ?? 0,
+    balance: cc.balance ?? cc.initialOutstanding ?? cc.outstanding ?? 0,
   }));
   const transactions = (Array.isArray(data.transactions) ? data.transactions : []).map((t) => {
     if (t.category === "CC PAYMENT" && !t.ccId) {
@@ -60,13 +61,15 @@ export function mergeData(data) {
     ...data,
     creditCards,
     transactions,
-    members: data.members || DEFAULTS.members,
-    ccMonthlyCharges: data.ccMonthlyCharges || {},
-    customTags: data.customTags || DEFAULTS.customTags,
-    variableSubCats: data.variableSubCats || DEFAULTS.variableSubCats,
-    savings: data.savings || DEFAULTS.savings,
-    income: data.income || DEFAULTS.income,
-    fixedExpenses: data.fixedExpenses || DEFAULTS.fixedExpenses,
+    members:         data.members         || DEFAULTS.members,
+    customTags:      data.customTags       || DEFAULTS.customTags,
+    variableSubCats: data.variableSubCats  || DEFAULTS.variableSubCats,
+    savings:         data.savings          || DEFAULTS.savings,
+    income:          data.income           || DEFAULTS.income,
+    fixedExpenses:   data.fixedExpenses    || DEFAULTS.fixedExpenses,
+    // Strip legacy fields so they don't persist back to Firestore
+    ccMonthlyCharges: undefined,
+    openingBalances:  undefined,
   };
 }
 

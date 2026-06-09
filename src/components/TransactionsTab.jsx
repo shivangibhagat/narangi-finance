@@ -16,6 +16,8 @@ export function TransactionsTab({ s, addTxn, delTxn, editTxn, setEditTxn, saveEd
     person: (s.members || DEFAULTS.members)[0],
     note: "",
     tags: [],
+    paidByCC: true,      // default CC since most expenses go on card
+    paidByCCId: null,
   });
   const [filter, setFilter] = useState("ALL");
   const [search, setSearch] = useState("");

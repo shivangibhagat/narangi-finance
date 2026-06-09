@@ -202,3 +202,73 @@ describe("safeBalance — after paying CC bills", () => {
     expect(bal - 20000).toBe(15000); // safe balance
   });
 });
+
+// ─── paidByCC / ccChargedExpenses balance logic ───────────────────────────────
+describe("ccChargedExpenses — CC-paid transactions excluded from bank balance", () => {
+  const makeTxn = (o) => ({
+    id: "t1", date: "2026-05-01", category: "VARIABLE EXPENSES",
+    subCat: "SHOPPING", person: "NARR", amount: 1000, ...o,
+  });
+
+  const ccCharged = (txns) =>
+    txns
+      .filter(t => ["FIXED EXPENSES","VARIABLE EXPENSES"].includes(t.category) && (t.paidByCCId || t.paidByCC))
+      .reduce((a, t) => a + t.amount, 0);
+
+  const balance = (income, fixed, variable, ccChargedAmt, ccPaid, savings = 0) =>
+    income - (fixed + variable - ccChargedAmt) - ccPaid - savings;
+
+  it("all expenses on CC: balance = income - ccPaid only", () => {
+    const txns = [
+      makeTxn({ category: "INCOME", amount: 100000, paidByCCId: null }),
+      makeTxn({ category: "FIXED EXPENSES",   amount: 20000, paidByCCId: "cc1" }),
+      makeTxn({ category: "VARIABLE EXPENSES",amount: 30000, paidByCCId: "cc1" }),
+      makeTxn({ category: "CC PAYMENT",       amount: 50000, paidByCCId: null  }),
+    ];
+    const cc = ccCharged(txns);
+    expect(cc).toBe(50000);
+    // balance should be 100000 - (50000 - 50000) - 50000 = 50000
+    const b = balance(100000, 20000, 30000, cc, 50000);
+    expect(b).toBe(50000);
+  });
+
+  it("all expenses cash: balance = income - all expenses - ccPaid", () => {
+    const txns = [
+      makeTxn({ category: "INCOME", amount: 100000 }),
+      makeTxn({ category: "FIXED EXPENSES",   amount: 20000 }), // no paidByCC
+      makeTxn({ category: "VARIABLE EXPENSES",amount: 30000 }), // no paidByCC
+    ];
+    const cc = ccCharged(txns);
+    expect(cc).toBe(0);
+    const b = balance(100000, 20000, 30000, cc, 0);
+    expect(b).toBe(50000);
+  });
+
+  it("mix: only CC-paid portion excluded", () => {
+    const txns = [
+      makeTxn({ category: "VARIABLE EXPENSES", amount: 5000, paidByCCId: "cc1" }), // CC
+      makeTxn({ category: "VARIABLE EXPENSES", amount: 3000 }), // cash
+    ];
+    const cc = ccCharged(txns);
+    expect(cc).toBe(5000);
+    const b = balance(50000, 0, 8000, cc, 0);
+    // 50000 - (8000 - 5000) - 0 = 47000
+    expect(b).toBe(47000);
+  });
+
+  it("backward compat: paidByCC:true (old boolean) also excluded", () => {
+    const txns = [
+      makeTxn({ category: "FIXED EXPENSES", amount: 10000, paidByCC: true }), // old format
+    ];
+    const cc = ccCharged(txns);
+    expect(cc).toBe(10000);
+  });
+
+  it("CC PAYMENT transactions are NOT in ccCharged (they reduce bank directly)", () => {
+    const txns = [
+      makeTxn({ category: "CC PAYMENT", amount: 60000, paidByCCId: "cc1" }),
+    ];
+    const cc = ccCharged(txns);
+    expect(cc).toBe(0); // CC payments are NOT ccCharged expenses
+  });
+});
