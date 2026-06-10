@@ -5,7 +5,7 @@ import { fmt, uid, confirmDel } from "../utils/format";
 import { ccPaymentMatchesCard } from "../utils/finance";
 import { Badge, Btn, Card, TI, Sel, iSty } from "./ui/primitives";
 
-export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMonth, setActiveMonth, activeYear, addTxn, isMobile }) {
+export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMonth, setActiveMonth, activeYear, addTxn, isMobile, runningBalance = 0, totalCCOwed: externalCCOwed }) {
   const [showAdd, setShowAdd]   = useState(false);
   const [editId, setEditId]     = useState(null);
   const [editVal, setEditVal]   = useState({});
@@ -14,6 +14,8 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
   const [payDate,setPayDate]    = useState(`${activeYear}-05-01`);
   const [payNote,setPayNote]    = useState("");
   const [newCard,setNewCard]    = useState({ name:"", person:(s.members||DEFAULTS.members)[0], balance:"", limit:"" });
+  const [editingStartBal, setEditingStartBal] = useState(false);
+  const [startBalInput,   setStartBalInput]   = useState("");
 
   const members = s.members || DEFAULTS.members;
 
@@ -79,17 +81,111 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
 
-      {/* ── Summary row ── */}
-      <div style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)", gap:10 }}>
+      {/* ── Running bank balance ── */}
+      {(() => {
+        const safe    = runningBalance - totOwed;
+        const safeClr = safe >= 0 ? T.green : T.rose;
+        const notSet  = !s.startingBalance && transactions.length > 0;
+        return (
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            {/* Prompt to set starting balance if not yet entered */}
+            {notSet && !editingStartBal && (
+              <div
+                onClick={() => { setStartBalInput(""); setEditingStartBal(true); }}
+                style={{ padding:"12px 16px", background:T.amber+"12", border:`1px dashed ${T.amber}55`, borderRadius:12, cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}
+              >
+                <div>
+                  <div style={{ fontSize:12, fontWeight:700, color:T.amber }}>Set your starting bank balance</div>
+                  <div style={{ fontSize:11, color:T.muted, marginTop:2 }}>Enter your combined bank balance from when you started tracking — needed for an accurate running balance</div>
+                </div>
+                <span style={{ fontSize:20, color:T.amber, marginLeft:12 }}>→</span>
+              </div>
+            )}
+
+            {/* Inline editor for starting balance */}
+            {editingStartBal && (
+              <div style={{ padding:"14px 16px", background:T.surface, border:`1px solid ${T.accent}44`, borderRadius:12 }}>
+                <div style={{ fontSize:12, fontWeight:700, color:T.accent, marginBottom:8 }}>
+                  💰 Combined bank balance when you started tracking
+                </div>
+                <div style={{ fontSize:11, color:T.muted, marginBottom:10 }}>
+                  Enter the total across both NARR + SHIVU accounts on the date you started tracking in this app.
+                  This is entered once and never needs updating — the app calculates everything from here.
+                </div>
+                <div style={{ display:"flex", gap:8 }}>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={startBalInput}
+                    onChange={e => setStartBalInput(e.target.value)}
+                    placeholder="e.g. 150000"
+                    autoFocus
+                    style={{ ...iSty, flex:1, fontSize:18, fontWeight:700, color:T.accent }}
+                  />
+                  <button
+                    onClick={() => {
+                      const v = parseFloat(startBalInput);
+                      if (!isNaN(v)) updNow({ startingBalance: v });
+                      setEditingStartBal(false);
+                    }}
+                    style={{ background:T.accent, border:"none", color:T.bg, borderRadius:10, padding:"0 18px", fontWeight:700, cursor:"pointer", flexShrink:0 }}
+                  >Save</button>
+                  <button
+                    onClick={() => setEditingStartBal(false)}
+                    style={{ background:"transparent", border:`1px solid ${T.border}`, color:T.muted, borderRadius:10, padding:"0 14px", fontWeight:700, cursor:"pointer", flexShrink:0 }}
+                  >Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {/* The balance panel */}
+            <div style={{
+              padding:"16px",
+              background: safeClr + "10",
+              border:`1px solid ${safeClr}30`,
+              borderRadius:14,
+            }}>
+              <div style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)", gap:12 }}>
+                {[
+                  { label:"Bank Balance",   val:runningBalance,   color: runningBalance >= 0 ? T.accent : T.rose, hint:"All time running" },
+                  { label:"CC Bills Owed",  val:totOwed,          color:T.rose,   hint:"Outstanding" },
+                  { label:"Safe to Spend",  val:Math.abs(safe),   color:safeClr,  hint: safe < 0 ? "⚠️ Shortfall" : "✅ After bills" },
+                  { label:"Paid This Month",val:totPaid,          color:T.accent, hint:`${activeMonth}` },
+                ].map(k => (
+                  <div key={k.label} style={{ textAlign:"center" }}>
+                    <div style={{ fontSize:9, color:T.muted, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:3 }}>{k.label}</div>
+                    <div style={{ fontSize:isMobile ? 14 : 18, fontWeight:800, color:k.color }}>{fmt(k.val)}</div>
+                    <div style={{ fontSize:9, color:T.muted, marginTop:2 }}>{k.hint}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Edit starting balance button */}
+              {s.startingBalance > 0 && (
+                <div style={{ marginTop:10, textAlign:"right" }}>
+                  <button
+                    onClick={() => { setStartBalInput(String(s.startingBalance)); setEditingStartBal(true); }}
+                    style={{ background:"transparent", border:"none", color:T.muted, fontSize:11, cursor:"pointer", textDecoration:"underline" }}
+                  >
+                    Edit starting balance ({fmt(s.startingBalance)})
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Available credit across cards ── */}
+      <div style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3,1fr)", gap:10 }}>
         {[
-          { label:"Total Owed",      val:totOwed,  color:T.rose  },
-          { label:"Paid This Month", val:totPaid,  color:T.accent},
-          { label:"Available Credit",val:totAvail, color:T.green },
           { label:"Total Limit",     val:totLimit, color:T.muted },
+          { label:"Total Used",      val:totOwed,  color:T.rose  },
+          { label:"Available Credit",val:totAvail, color:T.green },
         ].map(k => (
           <Card key={k.label} style={{ padding:"12px 10px", textAlign:"center" }}>
             <div style={{ fontSize:10, color:T.muted, fontWeight:700, textTransform:"uppercase", marginBottom:4 }}>{k.label}</div>
-            <div style={{ fontSize:isMobile ? 14 : 18, fontWeight:800, color:k.color }}>{fmt(k.val)}</div>
+            <div style={{ fontSize:isMobile ? 14 : 16, fontWeight:800, color:k.color }}>{fmt(k.val)}</div>
           </Card>
         ))}
       </div>

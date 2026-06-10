@@ -3,7 +3,7 @@ import { T, PIE_COLORS } from "../constants/theme";
 import { fmt, mNum, uid, confirmDel } from "../utils/format";
 import { ActualBar, Card, Lbl, iSty } from "./ui/primitives";
 
-export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transactions,activeMonth,activeYear,isMobile}) {
+export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transactions,activeMonth,activeYear,isMobile,runningBalance=0,totalCCOwed=0}) {
   const [newIncome,setNewIncome]=useState({label:"",amount:""});
   const [newFixed,setNewFixed]=useState({label:"",budget:""});
   const [newVarCat,setNewVarCat]=useState("");
@@ -248,6 +248,44 @@ export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transa
           <button onClick={()=>{const v=newTag.trim();if(!v||(s.customTags||[]).includes(v))return;updNow({customTags:[...(s.customTags||[]),v]});setNewTag("");}} style={{background:T.purple,border:"none",color:T.bg,borderRadius:8,padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:13,whiteSpace:"nowrap"}}>+ Add</button>
         </div>
       </Card>
+    {/* ── Starting Balance Setup ── */}
+    <Card style={{ border:`1px solid ${T.accent}22` }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
+        <div>
+          <div style={{ fontWeight:700, fontSize:14 }}>💰 Starting Balance</div>
+          <div style={{ fontSize:12, color:T.muted, marginTop:3 }}>
+            What was in your bank before you started tracking? Set this once.
+          </div>
+        </div>
+        <div style={{ textAlign:"right" }}>
+          <div style={{ fontSize:10, color:T.muted, fontWeight:700, textTransform:"uppercase" }}>Running Balance</div>
+          <div style={{ fontSize:18, fontWeight:800, color: runningBalance >= 0 ? T.green : T.rose }}>{fmt(runningBalance)}</div>
+          {totalCCOwed > 0 && (
+            <div style={{ fontSize:11, color:T.muted, marginTop:2 }}>
+              Safe: <span style={{ fontWeight:700, color: runningBalance - totalCCOwed >= 0 ? T.green : T.rose }}>{fmt(runningBalance - totalCCOwed)}</span>
+            </div>
+          )}
+        </div>
+      </div>
+      <div style={{ display:"flex", gap:10, alignItems:"flex-end" }}>
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:11, color:T.muted, fontWeight:700, marginBottom:6, textTransform:"uppercase" }}>Starting Balance ₹</div>
+          <input
+            type="number"
+            inputMode="decimal"
+            value={s.startingBalance || ""}
+            onChange={e => upd({ startingBalance: +e.target.value || 0 })}
+            placeholder="e.g. 75000"
+            style={{ ...iSty, fontSize:15, fontWeight:700 }}
+          />
+        </div>
+      </div>
+      <div style={{ fontSize:11, color:T.muted, marginTop:10, padding:"8px 10px", background:T.surface, borderRadius:8 }}>
+        💡 Enter the combined amount in all your bank accounts as of when you started using this app.
+        All transactions you add after that build on this number automatically.
+      </div>
+    </Card>
+
     </div>
   );
 }

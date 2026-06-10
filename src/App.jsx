@@ -94,12 +94,27 @@ export default function App() {
     [monthTxns]
   );
 
-  // Bank balance this month (used by CreditCardsTab safe-balance panel)
-  const currentBalance =
+  // This month's net — how much you gained or lost this month alone
+  const monthNet =
     summary.income -
     (summary.fixed + summary.variable - ccChargedExpenses) -
     summary.ccPaid -
     summary.savings;
+
+  // Running balance across ALL months — what's actually in your bank right now
+  // startingBalance = user's actual bank balance when they first set up the app (entered once)
+  const runningBalance = useMemo(() => {
+    const allTxns = s.transactions || [];
+    const allCCCharged = allTxns
+      .filter(t => ["FIXED EXPENSES","VARIABLE EXPENSES"].includes(t.category) && (t.paidByCCId || t.paidByCC))
+      .reduce((a, t) => a + t.amount, 0);
+    const all = summarize(allTxns);
+    return (s.startingBalance || 0) +
+      all.income -
+      (all.fixed + all.variable - allCCCharged) -
+      all.ccPaid -
+      all.savings;
+  }, [s.transactions, s.startingBalance]);
 
   // Total CC owed = sum of each card's stored balance
   const totalCCOwed = useMemo(
@@ -234,6 +249,11 @@ export default function App() {
                 />
                 <span style={{ color: T.muted, fontSize: 10 }}>
                   {syncLabel} · {activeMonth} {activeYear}
+                  {(s.startingBalance > 0 || (s.transactions || []).length > 0) && (
+                    <span style={{ marginLeft: 6, color: runningBalance >= 0 ? T.green : T.rose, fontWeight: 700 }}>
+                      · 🏦 {runningBalance >= 0 ? "" : "-"}₹{Math.round(Math.abs(runningBalance) / 1000)}k
+                    </span>
+                  )}
                 </span>
               </div>
             </div>
@@ -450,6 +470,8 @@ export default function App() {
             summarize={summarize}
             isMobile={isMobile}
             onOpenImport={() => setShowImport(true)}
+            runningBalance={runningBalance}
+            totalCCOwed={totalCCOwed}
           />
         )}
         {tab === "plan" && (
@@ -464,6 +486,8 @@ export default function App() {
             activeMonth={activeMonth}
             activeYear={activeYear}
             isMobile={isMobile}
+            runningBalance={runningBalance}
+            totalCCOwed={totalCCOwed}
           />
         )}
         {tab === "credit cards" && (
@@ -478,6 +502,8 @@ export default function App() {
             activeYear={activeYear}
             addTxn={addTxn}
             isMobile={isMobile}
+            runningBalance={runningBalance}
+            totalCCOwed={totalCCOwed}
           />
         )}
       </div>

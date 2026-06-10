@@ -63,7 +63,39 @@ export function TransactionsTab({ s, addTxn, delTxn, editTxn, setEditTxn, saveEd
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
-      {/* Summary row */}
+      {/* Running bank balance — the key number */}
+      {(() => {
+        const safe = runningBalance - totalCCOwed;
+        const safeClr = safe >= 0 ? T.green : T.rose;
+        return (
+          <div style={{
+            padding: "14px 16px",
+            background: safeClr + "10",
+            border: `1px solid ${safeClr}30`,
+            borderRadius: 14,
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)",
+            gap: 12,
+          }}>
+            {[
+              { label: "Bank Balance",  val: runningBalance,  color: runningBalance >= 0 ? T.accent : T.rose, hint: "All time" },
+              { label: "CC Bills Owed", val: totalCCOwed,     color: T.rose,   hint: "Outstanding" },
+              { label: "Safe to Spend", val: Math.abs(safe),  color: safeClr,  hint: safe < 0 ? "⚠️ Shortfall" : "✅ After CC bills" },
+              { label: `${activeMonth} Txns`, val: monthTxns.length, color: T.muted, raw: true, hint: "This month" },
+            ].map(k => (
+              <div key={k.label} style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 9, color: T.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3 }}>{k.label}</div>
+                <div style={{ fontSize: isMobile ? 16 : 18, fontWeight: 800, color: k.color }}>
+                  {k.raw ? k.val : fmt(k.val)}
+                </div>
+                <div style={{ fontSize: 9, color: T.muted, marginTop: 2 }}>{k.hint}</div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
+      {/* This-month summary */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
         {[
           { label: "Income", val: summary.income, color: T.accent },

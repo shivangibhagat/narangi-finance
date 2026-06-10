@@ -272,3 +272,69 @@ describe("ccChargedExpenses — CC-paid transactions excluded from bank balance"
     expect(cc).toBe(0); // CC payments are NOT ccCharged expenses
   });
 });
+
+// ─── Running balance (all-time, with startingBalance) ────────────────────────
+describe("runningBalance — cumulative across all months", () => {
+  const makeTxn = (cat, amt, cc = false) => ({
+    id: String(Math.random()), date: "2026-05-01",
+    category: cat, subCat: "TEST", person: "NARR", amount: amt,
+    paidByCCId: cc ? "cc1" : null, paidByCC: cc,
+  });
+
+  const runningBalance = (startingBalance, txns) => {
+    const allCCCharged = txns
+      .filter(t => ["FIXED EXPENSES","VARIABLE EXPENSES"].includes(t.category) && (t.paidByCCId || t.paidByCC))
+      .reduce((a, t) => a + t.amount, 0);
+    const income   = txns.filter(t => t.category === "INCOME").reduce((a, t) => a + t.amount, 0);
+    const fixed    = txns.filter(t => t.category === "FIXED EXPENSES").reduce((a, t) => a + t.amount, 0);
+    const variable = txns.filter(t => t.category === "VARIABLE EXPENSES").reduce((a, t) => a + t.amount, 0);
+    const ccPaid   = txns.filter(t => t.category === "CC PAYMENT").reduce((a, t) => a + t.amount, 0);
+    const savings  = txns.filter(t => t.category === "SAVINGS").reduce((a, t) => a + t.amount, 0);
+    return (startingBalance || 0) + income - (fixed + variable - allCCCharged) - ccPaid - savings;
+  };
+
+  it("uses startingBalance as base", () =>
+    expect(runningBalance(100000, [])).toBe(100000));
+
+  it("adds income to startingBalance", () =>
+    expect(runningBalance(50000, [makeTxn("INCOME", 68000)])).toBe(118000));
+
+  it("subtracts CC payments (not CC-charged expenses)", () => {
+    const txns = [
+      makeTxn("INCOME",         100000),
+      makeTxn("FIXED EXPENSES",  20000, true),  // CC-charged → no bank reduction
+      makeTxn("CC PAYMENT",      20000),         // bill payment → reduces bank
+    ];
+    // bank = 50000 + 100000 - (20000 - 20000) - 20000 = 130000
+    expect(runningBalance(50000, txns)).toBe(130000);
+  });
+
+  it("subtracts direct cash expenses", () => {
+    const txns = [
+      makeTxn("INCOME",          80000),
+      makeTxn("FIXED EXPENSES",  10000, false), // cash
+      makeTxn("VARIABLE EXPENSES", 5000, false), // cash
+    ];
+    // bank = 20000 + 80000 - 15000 = 85000
+    expect(runningBalance(20000, txns)).toBe(85000);
+  });
+
+  it("accumulates across multiple months of income", () => {
+    const txns = [
+      makeTxn("INCOME", 68000),   // May
+      makeTxn("INCOME", 100000),  // June (same array, different months in real app)
+      makeTxn("CC PAYMENT", 50000),
+      makeTxn("CC PAYMENT", 60000),
+    ];
+    // 0 + 168000 - 110000 = 58000
+    expect(runningBalance(0, txns)).toBe(58000);
+  });
+
+  it("safe balance = runningBalance - totalCCOwed", () => {
+    const rb = runningBalance(100000, [makeTxn("INCOME", 80000), makeTxn("CC PAYMENT", 50000)]);
+    // rb = 100000 + 80000 - 50000 = 130000
+    const safe = rb - 90000; // totalCCOwed = 90000
+    expect(rb).toBe(130000);
+    expect(safe).toBe(40000);
+  });
+});
