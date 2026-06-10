@@ -22,6 +22,7 @@ import { LoginScreen } from "./components/LoginScreen";
 import { TxnForm } from "./components/TxnForm";
 import { ImportModal } from "./components/ImportModal";
 import { TransactionsTab } from "./components/TransactionsTab";
+import { BalanceBar } from "./components/BalanceBar";
 import { PlanTab } from "./components/PlanTab";
 import { CreditCardsTab } from "./components/CreditCardsTab";
 
@@ -249,11 +250,6 @@ export default function App() {
                 />
                 <span style={{ color: T.muted, fontSize: 10 }}>
                   {syncLabel} · {activeMonth} {activeYear}
-                  {(s.startingBalance > 0 || (s.transactions || []).length > 0) && (
-                    <span style={{ marginLeft: 6, color: runningBalance >= 0 ? T.green : T.rose, fontWeight: 700 }}>
-                      · 🏦 {runningBalance >= 0 ? "" : "-"}₹{Math.round(Math.abs(runningBalance) / 1000)}k
-                    </span>
-                  )}
                 </span>
               </div>
             </div>
@@ -453,6 +449,15 @@ export default function App() {
           })}
         </div>
       </div>
+
+      <BalanceBar
+        runningBalance={runningBalance}
+        monthNet={monthNet}
+        totalCCOwed={totalCCOwed}
+        startingBalance={s.startingBalance || 0}
+        onSetStarting={(v) => updNow({ startingBalance: v })}
+        isMobile={isMobile}
+      />
 
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: `${p}px` }}>
         {tab === "transactions" && (
