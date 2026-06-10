@@ -5,7 +5,7 @@ import { fmt, mNum } from "../utils/format";
 import { Badge, Btn, Card, iSty, Modal } from "./ui/primitives";
 import { TxnForm } from "./TxnForm";
 
-export function TransactionsTab({ s, addTxn, delTxn, editTxn, setEditTxn, saveEditTxn, activeMonth, setActiveMonth, activeYear, getTxns, summarize, isMobile, onOpenImport }) {
+export function TransactionsTab({ s, addTxn, delTxn, editTxn, setEditTxn, saveEditTxn, activeMonth, setActiveMonth, activeYear, getTxns, summarize, isMobile, onOpenImport, runningBalance = 0, totalCCOwed = 0 }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     date: `${activeYear}-${mNum(activeMonth)}-01`,
