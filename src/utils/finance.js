@@ -67,7 +67,6 @@ export function mergeData(data) {
     savings:         data.savings          || DEFAULTS.savings,
     income:          data.income           || DEFAULTS.income,
     fixedExpenses:   data.fixedExpenses    || DEFAULTS.fixedExpenses,
-    startingBalance:  data.startingBalance  ?? 0,
     // Strip legacy fields so they don't persist back to Firestore
     ccMonthlyCharges: undefined,
     openingBalances:  undefined,

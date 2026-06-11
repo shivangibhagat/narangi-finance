@@ -1,6 +1,5 @@
 export const DEFAULTS = {
   members: ["NARR", "SHIVU"],
-  startingBalance: 0,    // one-time setup: actual bank balance when you started tracking
   income: [
     // Excel Financial Plan: NARR=55000 (planned), SHIVU=100000
     // May actual: NARR=68000, SHIVU=100000 → keeping actuals as defaults

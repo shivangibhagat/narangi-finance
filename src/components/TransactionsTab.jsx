@@ -5,7 +5,7 @@ import { fmt, mNum } from "../utils/format";
 import { Badge, Btn, Card, iSty, Modal } from "./ui/primitives";
 import { TxnForm } from "./TxnForm";
 
-export function TransactionsTab({ s, addTxn, delTxn, editTxn, setEditTxn, saveEditTxn, activeMonth, setActiveMonth, activeYear, getTxns, summarize, isMobile, onOpenImport, runningBalance = 0, totalCCOwed = 0 }) {
+export function TransactionsTab({ s, addTxn, delTxn, editTxn, setEditTxn, saveEditTxn, activeMonth, setActiveMonth, activeYear, getTxns, summarize, isMobile, onOpenImport }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     date: `${activeYear}-${mNum(activeMonth)}-01`,
@@ -64,71 +64,6 @@ export function TransactionsTab({ s, addTxn, delTxn, editTxn, setEditTxn, saveEd
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
       {/* Running bank balance — the key number */}
-      {(() => {
-        const safe = runningBalance - totalCCOwed;
-        const safeClr = safe >= 0 ? T.green : T.rose;
-        return (
-          <div style={{
-            padding: "14px 16px",
-            background: safeClr + "10",
-            border: `1px solid ${safeClr}30`,
-            borderRadius: 14,
-            display: "grid",
-            gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)",
-            gap: 12,
-          }}>
-            {[
-              { label: "Bank Balance",  val: runningBalance,  color: runningBalance >= 0 ? T.accent : T.rose, hint: "All time" },
-              { label: "CC Bills Owed", val: totalCCOwed,     color: T.rose,   hint: "Outstanding" },
-              { label: "Safe to Spend", val: Math.abs(safe),  color: safeClr,  hint: safe < 0 ? "⚠️ Shortfall" : "✅ After CC bills" },
-              { label: `${activeMonth} Txns`, val: monthTxns.length, color: T.muted, raw: true, hint: "This month" },
-            ].map(k => (
-              <div key={k.label} style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 9, color: T.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 3 }}>{k.label}</div>
-                <div style={{ fontSize: isMobile ? 16 : 18, fontWeight: 800, color: k.color }}>
-                  {k.raw ? k.val : fmt(k.val)}
-                </div>
-                <div style={{ fontSize: 9, color: T.muted, marginTop: 2 }}>{k.hint}</div>
-              </div>
-            ))}
-          </div>
-        );
-      })()}
-
-      {/* This-month summary */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-        {[
-          { label: "Income", val: summary.income, color: T.accent },
-          { label: "Expenses", val: summary.fixed + summary.variable, color: T.rose },
-          { label: "Transactions", val: monthTxns.length, color: T.muted, raw: true },
-        ].map(k => (
-          <Card key={k.label} style={{ padding: "12px 14px", textAlign: "center" }}>
-            <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, textTransform: "uppercase", marginBottom: 4 }}>{k.label}</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: k.color }}>{k.raw ? k.val : fmt(k.val)}</div>
-          </Card>
-        ))}
-      </div>
-
-      {/* Mobile action buttons */}
-      {isMobile && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <Btn full onClick={() => setShowForm(true)} style={{ padding: "13px", fontSize: 14 }}>➕ Add</Btn>
-          <Btn full variant="outline" color={T.purple} onClick={onOpenImport} style={{ padding: "13px", fontSize: 14 }}>📥 Import</Btn>
-        </div>
-      )}
-
-      {/* Desktop: import button + inline form */}
-      {!isMobile && (
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <Btn variant="outline" color={T.purple} onClick={onOpenImport} style={{ marginBottom: 4 }}>📥 Import from Excel</Btn>
-        </div>
-      )}
-      {!isMobile && (
-        <Card>
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14 }}>➕ Add Transaction</div>
-          <TxnForm state={s} value={form} onChange={setForm} onSubmit={handleAdd} />
-        </Card>
-      )}
 
       {/* Search + filters */}
       <input

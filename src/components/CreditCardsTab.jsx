@@ -5,7 +5,7 @@ import { fmt, uid, confirmDel } from "../utils/format";
 import { ccPaymentMatchesCard } from "../utils/finance";
 import { Badge, Btn, Card, TI, Sel, iSty } from "./ui/primitives";
 
-export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMonth, setActiveMonth, activeYear, addTxn, isMobile, runningBalance = 0, totalCCOwed: externalCCOwed }) {
+export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMonth, setActiveMonth, activeYear, addTxn, isMobile }) {
   const [showAdd, setShowAdd]   = useState(false);
   const [editId, setEditId]     = useState(null);
   const [editVal, setEditVal]   = useState({});
@@ -79,50 +79,8 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
 
-      {/* ── Running bank balance ── */}
-      {(() => {
-        const safe    = runningBalance - totOwed;
-        const safeClr = safe >= 0 ? T.green : T.rose;
-        return (
-          <div style={{
-            padding:"16px",
-            background: safeClr + "10",
-            border:`1px solid ${safeClr}30`,
-            borderRadius:14,
-          }}>
-            <div style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)", gap:12 }}>
-              {[
-                { label:"Bank Balance",    val:runningBalance,   color: runningBalance >= 0 ? T.accent : T.rose, hint:"All-time running" },
-                { label:"CC Bills Owed",   val:totOwed,          color:T.rose,   hint:"Outstanding" },
-                { label:"Safe to Spend",   val:Math.abs(safe),   color:safeClr,  hint: safe < 0 ? "⚠️ Shortfall" : "✅ After bills" },
-                { label:"Paid This Month", val:totPaid,          color:T.accent, hint:`${activeMonth}` },
-              ].map(k => (
-                <div key={k.label} style={{ textAlign:"center" }}>
-                  <div style={{ fontSize:9, color:T.muted, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:3 }}>{k.label}</div>
-                  <div style={{ fontSize:isMobile ? 14 : 18, fontWeight:800, color:k.color }}>{fmt(k.val)}</div>
-                  <div style={{ fontSize:9, color:T.muted, marginTop:2 }}>{k.hint}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
 
-      {/* ── Available credit across cards ── */}
-      <div style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3,1fr)", gap:10 }}>
-        {[
-          { label:"Total Limit",     val:totLimit, color:T.muted },
-          { label:"Total Used",      val:totOwed,  color:T.rose  },
-          { label:"Available Credit",val:totAvail, color:T.green },
-        ].map(k => (
-          <Card key={k.label} style={{ padding:"12px 10px", textAlign:"center" }}>
-            <div style={{ fontSize:10, color:T.muted, fontWeight:700, textTransform:"uppercase", marginBottom:4 }}>{k.label}</div>
-            <div style={{ fontSize:isMobile ? 14 : 16, fontWeight:800, color:k.color }}>{fmt(k.val)}</div>
-          </Card>
-        ))}
-      </div>
-
-      {/* ── Per-card ── */}
+            {/* ── Per-card ── */}
       {ccStats.map((cc, i) => {
         const clr = CC_COLORS[i % CC_COLORS.length];
         const isEditing = editId === cc.id;

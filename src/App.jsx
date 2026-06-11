@@ -22,7 +22,6 @@ import { LoginScreen } from "./components/LoginScreen";
 import { TxnForm } from "./components/TxnForm";
 import { ImportModal } from "./components/ImportModal";
 import { TransactionsTab } from "./components/TransactionsTab";
-import { BalanceBar } from "./components/BalanceBar";
 import { PlanTab } from "./components/PlanTab";
 import { CreditCardsTab } from "./components/CreditCardsTab";
 
@@ -87,41 +86,6 @@ export default function App() {
     [getTxns, activeMonth, activeYear]
   );
   const summary = useMemo(() => summarize(monthTxns), [monthTxns]);
-  // Expenses charged to a CC card — don't reduce bank directly (covered by CC bill payment)
-  const ccChargedExpenses = useMemo(() =>
-    monthTxns
-      .filter(t => ["FIXED EXPENSES","VARIABLE EXPENSES"].includes(t.category) && (t.paidByCCId || t.paidByCC))
-      .reduce((a, t) => a + t.amount, 0),
-    [monthTxns]
-  );
-
-  // This month's net — how much you gained or lost this month alone
-  const monthNet =
-    summary.income -
-    (summary.fixed + summary.variable - ccChargedExpenses) -
-    summary.ccPaid -
-    summary.savings;
-
-  // Running balance across ALL months — what's actually in your bank right now
-  // startingBalance = user's actual bank balance when they first set up the app (entered once)
-  const runningBalance = useMemo(() => {
-    const allTxns = s.transactions || [];
-    const allCCCharged = allTxns
-      .filter(t => ["FIXED EXPENSES","VARIABLE EXPENSES"].includes(t.category) && (t.paidByCCId || t.paidByCC))
-      .reduce((a, t) => a + t.amount, 0);
-    const all = summarize(allTxns);
-    return (s.startingBalance || 0) +
-      all.income -
-      (all.fixed + all.variable - allCCCharged) -
-      all.ccPaid -
-      all.savings;
-  }, [s.transactions, s.startingBalance]);
-
-  // Total CC owed = sum of each card's stored balance
-  const totalCCOwed = useMemo(
-    () => (s.creditCards || []).reduce((a, cc) => a + (cc.balance || 0), 0),
-    [s.creditCards]
-  );
 
   const totalIncome  = (s.income        || []).reduce((a, i)  => a + i.amount,       0);
   const totalFixed   = (s.fixedExpenses || []).reduce((a, f)  => a + f.budget,        0);
@@ -450,15 +414,6 @@ export default function App() {
         </div>
       </div>
 
-      <BalanceBar
-        runningBalance={runningBalance}
-        monthNet={monthNet}
-        totalCCOwed={totalCCOwed}
-        startingBalance={s.startingBalance || 0}
-        onSetStarting={(v) => updNow({ startingBalance: v })}
-        isMobile={isMobile}
-      />
-
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: `${p}px` }}>
         {tab === "transactions" && (
           <TransactionsTab
@@ -475,8 +430,6 @@ export default function App() {
             summarize={summarize}
             isMobile={isMobile}
             onOpenImport={() => setShowImport(true)}
-            runningBalance={runningBalance}
-            totalCCOwed={totalCCOwed}
           />
         )}
         {tab === "plan" && (
@@ -491,8 +444,6 @@ export default function App() {
             activeMonth={activeMonth}
             activeYear={activeYear}
             isMobile={isMobile}
-            runningBalance={runningBalance}
-            totalCCOwed={totalCCOwed}
           />
         )}
         {tab === "credit cards" && (
@@ -507,8 +458,6 @@ export default function App() {
             activeYear={activeYear}
             addTxn={addTxn}
             isMobile={isMobile}
-            runningBalance={runningBalance}
-            totalCCOwed={totalCCOwed}
           />
         )}
       </div>
