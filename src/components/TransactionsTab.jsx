@@ -63,7 +63,40 @@ export function TransactionsTab({ s, addTxn, delTxn, editTxn, setEditTxn, saveEd
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
-      {/* Running bank balance — the key number */}
+      {/* Summary row */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+        {[
+          { label: "Income",       val: summary.income,                       color: T.accent },
+          { label: "Expenses",     val: summary.fixed + summary.variable,     color: T.rose   },
+          { label: "Transactions", val: monthTxns.length, color: T.muted, raw: true },
+        ].map(k => (
+          <Card key={k.label} style={{ padding: "12px 14px", textAlign: "center" }}>
+            <div style={{ fontSize: 10, color: T.muted, fontWeight: 700, textTransform: "uppercase", marginBottom: 4 }}>{k.label}</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: k.color }}>{k.raw ? k.val : fmt(k.val)}</div>
+          </Card>
+        ))}
+      </div>
+
+      {/* Mobile: Add + Import buttons */}
+      {isMobile && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <Btn full onClick={() => setShowForm(true)} style={{ padding: "13px", fontSize: 14 }}>➕ Add</Btn>
+          <Btn full variant="outline" color={T.purple} onClick={onOpenImport} style={{ padding: "13px", fontSize: 14 }}>📥 Import</Btn>
+        </div>
+      )}
+
+      {/* Desktop: Import button + inline form */}
+      {!isMobile && (
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <Btn variant="outline" color={T.purple} onClick={onOpenImport}>📥 Import from Excel</Btn>
+        </div>
+      )}
+      {!isMobile && (
+        <Card>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14 }}>➕ Add Transaction</div>
+          <TxnForm state={s} value={form} onChange={setForm} onSubmit={handleAdd} />
+        </Card>
+      )}
 
       {/* Search + filters */}
       <input
