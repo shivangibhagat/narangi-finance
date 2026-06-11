@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { T } from "../constants/theme";
 import { DEFAULTS } from "../constants/defaults";
-import { fmt, uid, confirmDel } from "../utils/format";
+import { fmt, mNum, uid, confirmDel } from "../utils/format";
 import { ccPaymentMatchesCard } from "../utils/finance";
 import { Badge, Btn, Card, TI, Sel, iSty } from "./ui/primitives";
 
@@ -16,14 +16,32 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
   const [newCard,setNewCard]    = useState({ name:"", person:(s.members||DEFAULTS.members)[0], balance:"", limit:"" });
 
   const members = s.members || DEFAULTS.members;
+  const activeMonthKey = `${activeYear}-${mNum(activeMonth)}`;
 
-  // ── Simple per-card stats: balance stored on card + payments this month ─────
+  // Get balance for a card for the active month.
+  // Falls back to the most recent past month's balance, then to legacy cc.balance field.
+  const getCardBalance = (cc) => {
+    const mb = cc.monthlyBalances || {};
+    if (mb[activeMonthKey] !== undefined) return mb[activeMonthKey];
+    // Find most recent month before activeMonth
+    const pastKey = Object.keys(mb).sort().reverse().find(k => k < activeMonthKey);
+    if (pastKey !== undefined) return mb[pastKey];
+    return cc.balance ?? 0; // legacy fallback
+  };
+
+  // Save the balance for the active month only — does NOT affect other months
+  const setCardBalance = (ccId, newBal) =>
+    updNow({ creditCards: (s.creditCards || []).map(c => c.id === ccId ? {
+      ...c,
+      monthlyBalances: { ...(c.monthlyBalances || {}), [activeMonthKey]: Math.max(0, newBal) }
+    } : c) });
+
+  // ── Per-card stats ──────────────────────────────────────────────────────────
   const ccStats = useMemo(() => (s.creditCards || []).map(cc => {
-    const balance    = cc.balance || 0;
+    const balance    = getCardBalance(cc);
     const paid       = getTxns(activeMonth, activeYear)
       .filter(t => ccPaymentMatchesCard(t, cc))
       .reduce((a, t) => a + t.amount, 0);
-    // Expenses specifically charged to this card this month
     const charged    = getTxns(activeMonth, activeYear)
       .filter(t => ["FIXED EXPENSES","VARIABLE EXPENSES"].includes(t.category) && t.paidByCCId === cc.id)
       .reduce((a, t) => a + t.amount, 0);
@@ -50,13 +68,21 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
     if (!cc) return;
     // Add payment transaction
     addTxn({ date: payDate, category: "CC PAYMENT", subCat: cc.name, spentOn: `CC Payment – ${cc.name}`, amount: amt, person: cc.person, note: payNote, tags: [], ccId: payId });
-    // Reduce card balance
-    updNow({ creditCards: (s.creditCards || []).map(c => c.id === payId ? { ...c, balance: Math.max(0, (c.balance || 0) - amt) } : c) });
+    // Reduce this month's balance only
+    setCardBalance(payId, getCardBalance(cc) - amt);
     setPayId(null); setPayAmt(""); setPayNote("");
   };
 
   const saveEdit = () => {
-    updNow({ creditCards: (s.creditCards || []).map(c => c.id === editId ? { ...c, ...editVal, balance: +editVal.balance || 0, limit: +editVal.limit || 0 } : c) });
+    const newBal = +editVal.balance || 0;
+    updNow({ creditCards: (s.creditCards || []).map(c => c.id === editId ? {
+      ...c,
+      name:         editVal.name,
+      limit:        +editVal.limit || 0,
+      cashbackRate: +editVal.cashbackRate || 0,
+      // Save balance for the active month only
+      monthlyBalances: { ...(c.monthlyBalances || {}), [activeMonthKey]: newBal }
+    } : c) });
     setEditId(null);
   };
 
@@ -260,7 +286,7 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
               💡 Enter what you currently owe. Update it anytime from your statement.
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginTop:4 }}>
-              <button onClick={() => { if (!newCard.name) return; updNow({ creditCards:[...(s.creditCards||[]),{id:uid(),name:newCard.name,person:newCard.person,balance:+newCard.balance||0,limit:+newCard.limit||0,cashbackRate:+newCard.cashbackRate||0}] }); setNewCard({name:"",person:members[0],balance:"",limit:"",cashbackRate:""}); setShowAdd(false); }} style={{ background:T.accent, border:"none", color:T.bg, borderRadius:10, padding:12, fontWeight:700, cursor:"pointer" }}>Add Card</button>
+              <button onClick={() => { if (!newCard.name) return; updNow({ creditCards:[...(s.creditCards||[]),{id:uid(),name:newCard.name,person:newCard.person,limit:+newCard.limit||0,cashbackRate:+newCard.cashbackRate||0,monthlyBalances:{[activeMonthKey]:+newCard.balance||0}}] }); setNewCard({name:"",person:members[0],balance:"",limit:"",cashbackRate:""}); setShowAdd(false); }} style={{ background:T.accent, border:"none", color:T.bg, borderRadius:10, padding:12, fontWeight:700, cursor:"pointer" }}>Add Card</button>
               <button onClick={()=>setShowAdd(false)} style={{ background:"transparent", border:`1px solid ${T.border}`, color:T.muted, borderRadius:10, padding:12, fontWeight:700, cursor:"pointer" }}>Cancel</button>
             </div>
           </div>
