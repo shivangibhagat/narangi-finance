@@ -1,6 +1,8 @@
 import { useState, useMemo } from "react";
 import { T, PIE_COLORS } from "../constants/theme";
+import { DEFAULTS } from "../constants/defaults";
 import { fmt, mNum, uid, confirmDel } from "../utils/format";
+import { incomePersonFor, fixedActualFor, savingsTotalsByLabel } from "../utils/finance";
 import { ActualBar, Card, Lbl, iSty } from "./ui/primitives";
 
 export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transactions,activeMonth,activeYear,isMobile}) {
@@ -15,7 +17,7 @@ export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transa
   const planBalance=totalIncome-totalFixed-s.variableBudget-totalSavings;
   const iSt={...iSty,fontSize:13,padding:"8px 10px"};
 
-  const monthTxns=useMemo(()=>transactions.filter(t=>t.date.startsWith(`${activeYear}-${mNum(activeMonth)}`)),[transactions,activeMonth,activeYear]);
+  const monthTxns=useMemo(()=>transactions.filter(t=>t.date?.startsWith(`${activeYear}-${mNum(activeMonth)}`)),[transactions,activeMonth,activeYear]);
   const members = s.members || DEFAULTS.members;
 
   // Income: match by person — "NARR Salary" item → all INCOME txns where person===NARR.
@@ -30,31 +32,17 @@ export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transa
     return m;
   }, [monthTxns, members]);
 
-  const getIncomePerson = (inc) =>
-    members.find(m =>
-      (inc.label  || "").toUpperCase().includes(m.toUpperCase()) ||
-      (inc.subCat || "").toUpperCase().includes(m.toUpperCase())
-    ) || null;
+  const getIncomePerson = (inc) => incomePersonFor(inc, members);
 
   // Fixed expenses: match by subCat OR label (both patterns exist in real data)
-  const getFixedActual = (fe) => {
-    const canon = (fe.subCat || "").trim().toUpperCase();
-    const lbl   = (fe.label  || "").trim().toUpperCase();
-    return monthTxns
-      .filter(t => t.category === "FIXED EXPENSES")
-      .filter(t => {
-        const sc = (t.subCat || "").trim().toUpperCase();
-        return (canon && sc === canon) || (lbl && sc === lbl);
-      })
-      .reduce((a, t) => a + t.amount, 0);
-  };
   const fixedActuals = useMemo(
-    () => Object.fromEntries((s.fixedExpenses || []).map(fe => [fe.id, getFixedActual(fe)])),
+    () => Object.fromEntries((s.fixedExpenses || []).map(fe => [fe.id, fixedActualFor(fe, monthTxns)])),
     [monthTxns, s.fixedExpenses]
   );
   const varActual = useMemo(() => monthTxns.filter(t => t.category === "VARIABLE EXPENSES").reduce((a, t) => a + t.amount, 0), [monthTxns]);
-  const savingsProgress=useMemo(()=>{ const mp={}; monthTxns.filter(t=>t.category==="SAVINGS").forEach(t=>{mp[t.subCat]=(mp[t.subCat]||0)+t.amount;}); return mp; },[monthTxns]);
-  const savingsProgressAll=useMemo(()=>{ const mp={}; transactions.filter(t=>t.category==="SAVINGS").forEach(t=>{mp[t.subCat]=(mp[t.subCat]||0)+t.amount;}); return mp; },[transactions]);
+  // Keyed by UPPER-CASED label so imported txns ("TRAVEL FUND") match goals ("Travel Fund")
+  const savingsProgress=useMemo(()=>savingsTotalsByLabel(monthTxns),[monthTxns]);
+  const savingsProgressAll=useMemo(()=>savingsTotalsByLabel(transactions),[transactions]);
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -177,8 +165,8 @@ export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transa
       <Card>
         <div style={{fontWeight:700,fontSize:14,color:T.purple,marginBottom:12}}>🎯 Savings Goals</div>
         {(s.savings||[]).map((sv,i)=>{
-          const contributed=savingsProgressAll[sv.label]||0;
-          const monthContributed=savingsProgress[sv.label]||0;
+          const contributed=savingsProgressAll[(sv.label||"").toUpperCase()]||0;
+          const monthContributed=savingsProgress[(sv.label||"").toUpperCase()]||0;
           const pct=sv.goalTarget>0?Math.min(100,(contributed/sv.goalTarget)*100):0;
           const monthsLeft=sv.monthlyTarget>0&&sv.goalTarget>contributed?Math.ceil((sv.goalTarget-contributed)/sv.monthlyTarget):null;
           const clr=PIE_COLORS[i%PIE_COLORS.length];

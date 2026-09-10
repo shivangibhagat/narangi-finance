@@ -35,11 +35,28 @@ describe("ccKey()", () => {
     () => expect(ccKey("cc2", 2026, "Jan")).toBe("cc2_2026-01"));
 });
 
+describe("fmt() — corner cases", () => {
+  it("handles NaN as ₹0",          () => expect(fmt(NaN)).toBe("₹0"));
+  it("handles numeric strings",    () => expect(fmt("12345")).toBe("₹12,345"));
+  it("handles garbage strings",    () => expect(fmt("abc")).toBe("₹0"));
+  it("handles floats",             () => expect(fmt(1500.5)).toBe("₹1,500.5"));
+  it("handles large values",       () => expect(fmt(10000000)).toBe("₹1,00,00,000"));
+});
+
+describe("mNum() — corner cases", () => {
+  it("unknown month → '00' (never crashes)", () => expect(mNum("Foo")).toBe("00"));
+  it("empty → '00'", () => expect(mNum("")).toBe("00"));
+});
+
 describe("uid() — unique ID generator", () => {
   it("returns a string",           () => expect(typeof uid()).toBe("string"));
   it("is never empty",             () => expect(uid().length).toBeGreaterThan(0));
   it("generates unique IDs",       () => {
     const ids = new Set(Array.from({ length: 100 }, () => uid()));
     expect(ids.size).toBe(100);
+  });
+  it("stays unique across a bulk import (1000 rapid calls)", () => {
+    const ids = new Set(Array.from({ length: 1000 }, () => uid()));
+    expect(ids.size).toBe(1000);
   });
 });

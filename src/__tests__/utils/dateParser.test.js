@@ -17,6 +17,41 @@ describe("fmtDateCell() — null / empty", () => {
   it("returns '' for ''",        () => expect(fmtDateCell("")).toBe(""));
 });
 
+describe("fmtDateCell() — string corner cases", () => {
+  it("accepts non-padded ISO '2026-5-1'", () =>
+    expect(fmtDateCell("2026-5-1")).toBe("2026-05-01"));
+
+  it("defaults ambiguous 01/02/2026 to DD/MM/YYYY (Indian convention)", () =>
+    expect(fmtDateCell("01/02/2026")).toBe("2026-02-01"));
+
+  it("resolves first>12 as DD/MM/YYYY", () =>
+    expect(fmtDateCell("25/12/2026")).toBe("2026-12-25"));
+
+  it("resolves second>12 as MM/DD/YYYY", () =>
+    expect(fmtDateCell("12/25/2026")).toBe("2026-12-25"));
+
+  it("expands 2-digit years to 20xx", () =>
+    expect(fmtDateCell("5/1/26")).toBe("2026-01-05"));
+
+  it("returns '' for garbage strings", () => {
+    expect(fmtDateCell("not a date")).toBe("");
+    expect(fmtDateCell("2026")).toBe("");
+    expect(fmtDateCell("12-25")).toBe("");
+  });
+
+  it("returns '' for serials without a parseFn", () =>
+    expect(fmtDateCell(46143)).toBe(""));
+
+  it("returns '' when parseFn throws", () =>
+    expect(fmtDateCell(46143, () => { throw new Error("bad"); })).toBe(""));
+
+  it("returns '' for unsupported types", () => {
+    expect(fmtDateCell({})).toBe("");
+    expect(fmtDateCell([])).toBe("");
+    expect(fmtDateCell(true)).toBe("");
+  });
+});
+
 describe("fmtDateCell() — Excel serial numbers (no timezone bug)", () => {
   it("serial 46143 → 2026-05-01 (May 1 2026)", () =>
     expect(fmtDateCell(46143, mockParseFn)).toBe("2026-05-01"));

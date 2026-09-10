@@ -24,15 +24,14 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
       .reduce((a, t) => a + t.amount, 0);
     const closingBalance = Math.max(0, openingBalance + newCharges - monthPayments);
     const totalPaid = transactions.filter(t => ccPaymentMatchesCard(t, cc)).reduce((a, t) => a + t.amount, 0);
-    const totalCharges = Object.entries(s.ccMonthlyCharges || {}).filter(([k]) => k.startsWith(cc.id + "_")).reduce((a, [, v]) => a + v, 0);
-    const recentPmts = transactions.filter(t => ccPaymentMatchesCard(t, cc)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+    const recentPmts = transactions.filter(t => ccPaymentMatchesCard(t, cc)).sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 5);
 
     // Available credit = limit minus what you currently owe (current balance)
     const availableCredit = (cc.limit || 0) > 0 ? Math.max(0, cc.limit - closingBalance) : null;
     // Utilization % based on current balance
     const utilPct = cc.limit > 0 ? Math.min(100, Math.round((closingBalance / cc.limit) * 100)) : 0;
 
-    return { ...cc, openingBalance, newCharges, monthPayments, closingBalance, totalPaid, totalCharges, currentBalance: closingBalance, recentPmts, availableCredit, utilPct };
+    return { ...cc, openingBalance, newCharges, monthPayments, closingBalance, totalPaid, currentBalance: closingBalance, recentPmts, availableCredit, utilPct };
   }), [s.creditCards, s.ccMonthlyCharges, transactions, activeMonth, activeYear, getTxns]);
 
   // ─── Total CC debt to pay across all cards ────────────────────────────────
@@ -48,13 +47,13 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
     return members.map((member, i) => {
       const memberCards = ccStats.filter(cc => cc.person === member);
       const memberIncome = transactions
-        .filter(t => t.person === member && t.category === "INCOME" && t.date.startsWith(`${activeYear}-${mNum(activeMonth)}`))
+        .filter(t => t.person === member && t.category === "INCOME" && t.date?.startsWith(`${activeYear}-${mNum(activeMonth)}`))
         .reduce((a, t) => a + t.amount, 0);
       const memberCashSpend = transactions
-        .filter(t => t.person === member && (t.category === "FIXED EXPENSES" || t.category === "VARIABLE EXPENSES") && t.date.startsWith(`${activeYear}-${mNum(activeMonth)}`))
+        .filter(t => t.person === member && (t.category === "FIXED EXPENSES" || t.category === "VARIABLE EXPENSES") && t.date?.startsWith(`${activeYear}-${mNum(activeMonth)}`))
         .reduce((a, t) => a + t.amount, 0);
       const memberCCPaid = transactions
-        .filter(t => t.person === member && t.category === "CC PAYMENT" && t.date.startsWith(`${activeYear}-${mNum(activeMonth)}`))
+        .filter(t => t.person === member && t.category === "CC PAYMENT" && t.date?.startsWith(`${activeYear}-${mNum(activeMonth)}`))
         .reduce((a, t) => a + t.amount, 0);
       const memberCCOwed = memberCards.reduce((a, cc) => a + cc.currentBalance, 0);
 
@@ -75,7 +74,7 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
     if (!(amt > 0)) return;
     const cc = (s.creditCards || []).find(c => c.id === ccId);
     if (!cc) return;
-    addTxn({ date: payForm.date, category: "CC PAYMENT", subCat: cc.name, spentOn: `CC Payment - ${cc.name}`, amount: amt, person: cc.person, note: payForm.note, tags: [], ccId });
+    addTxn({ date: payForm.date || `${activeYear}-${mNum(activeMonth)}-01`, category: "CC PAYMENT", subCat: cc.name, spentOn: `CC Payment - ${cc.name}`, amount: amt, person: cc.person, note: payForm.note, tags: [], ccId });
     setPayForm(f => ({ ...f, ccId: null, amount: "", note: "" }));
   };
 
@@ -221,7 +220,7 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
       {/* ── Month picker ── */}
       <div style={{ display: "flex", gap: 5, overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 2 }}>
         {getVisibleMonths(activeYear).map(m => {
-          const has = transactions.filter(t => t.category === "CC PAYMENT" && t.date.startsWith(`${activeYear}-${mNum(m)}`)).length > 0;
+          const has = transactions.filter(t => t.category === "CC PAYMENT" && t.date?.startsWith(`${activeYear}-${mNum(m)}`)).length > 0;
           return (
             <button key={m} onClick={() => setActiveMonth(m)} style={{
               background: activeMonth === m ? T.rose : "transparent",
@@ -261,7 +260,7 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
                       💡 Starting debt = what you owed when you first started tracking this card
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                      <button onClick={() => { updNow({ creditCards: (s.creditCards || []).map(c => c.id === cc.id ? { ...c, ...editCardVal } : c) }); setEditCardId(null); }} style={{ background: T.accent, border: "none", color: T.bg, borderRadius: 8, padding: "10px", fontWeight: 700, cursor: "pointer" }}>Save</button>
+                      <button onClick={() => { updNow({ creditCards: (s.creditCards || []).map(c => c.id === cc.id ? { ...c, ...editCardVal, name: (editCardVal.name || "").trim() || c.name } : c) }); setEditCardId(null); }} style={{ background: T.accent, border: "none", color: T.bg, borderRadius: 8, padding: "10px", fontWeight: 700, cursor: "pointer" }}>Save</button>
                       <button onClick={() => setEditCardId(null)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.muted, borderRadius: 8, padding: "10px", fontWeight: 700, cursor: "pointer" }}>Cancel</button>
                     </div>
                   </div>
@@ -387,7 +386,7 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
                 <div style={{ fontSize: 11, color: T.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Recent Payments</div>
                 {cc.recentPmts.map(t => (
                   <div key={t.id} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${T.border}22` }}>
-                    <span style={{ fontSize: 12, color: T.muted }}>{t.date} — {t.note || "Payment"}</span>
+                    <span style={{ fontSize: 12, color: T.muted }}>{t.date || "—"} — {t.note || "Payment"}</span>
                     <span style={{ fontSize: 12, fontWeight: 700, color: clr }}>{fmt(t.amount)}</span>
                   </div>
                 ))}
