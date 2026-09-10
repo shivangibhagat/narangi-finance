@@ -4,7 +4,7 @@ import { DEFAULTS } from "../constants/defaults";
 import { Btn, Lbl, Sel, TI, iSty } from "./ui/primitives";
 
 // ─── Quick-parse natural language: "coffee 89 shivu" ─────────────────────────
-function parseQuickText(text, members, subCats) {
+export function parseQuickText(text, members, subCats) {
   const parts = text.trim().split(/\s+/);
   let amount = null;
   let person = null;
@@ -52,7 +52,7 @@ export function TxnForm({ state, value, onChange, onSubmit, submitLabel = "Add T
   // Reset subCat when category changes and current subCat is no longer valid
   useEffect(() => {
     if (subCats.length > 0 && !subCats.includes(value.subCat)) {
-      const cc = value.category === "CC PAYMENT" ? state.creditCards.find(c => c.name === subCats[0]) : null;
+      const cc = value.category === "CC PAYMENT" ? (state.creditCards || []).find(c => c.name === subCats[0]) : null;
       onChange({ ...value, subCat: subCats[0], ccId: cc?.id ?? null });
     }
   }, [subCats.join("|"), value.category, value.subCat]);
@@ -195,8 +195,10 @@ export function TxnForm({ state, value, onChange, onSubmit, submitLabel = "Add T
           value={value.spentOn}
           onChange={e => {
             const txt = e.target.value;
-            // If text matches quick-parse pattern (has a number), parse it
-            if (/\d/.test(txt) && txt.split(" ").some(p => /^\d+$/.test(p))) {
+            // If text matches quick-parse pattern (has a number) and the user
+            // hasn't already typed an amount, parse it ("coffee 89 shivu").
+            // Never clobber a manually entered amount (e.g. typing "iPhone 16").
+            if (!value.amount && /\d/.test(txt) && txt.split(" ").some(p => /^\d+$/.test(p))) {
               handleQuickParse(txt);
             } else {
               upd({ spentOn: txt });

@@ -123,21 +123,26 @@ export default function App() {
 
   const addTxn = useCallback(
     (form) => {
+      const spentOn = (form.spentOn || "").trim();
       const amt = parseFloat(form.amount);
-      if (!form.spentOn || !(amt > 0)) return;
+      if (!spentOn || !(amt > 0)) return;
       const txn = {
         ...form,
         id: uid(),
+        // A missing date would make the txn invisible in every month view —
+        // fall back to the 1st of the viewed month instead of saving "".
+        date: form.date || `${activeYear}-${mNum(activeMonth)}-01`,
+        spentOn,
         amount: amt,
         tags: form.tags || [],
         ccId: form.ccId || null,
-        note: form.note || "",
+        note: (form.note || "").trim(),
       };
       const newS = { ...s, transactions: [...(s.transactions || []), txn] };
       setS(newS);
       saveNow(newS);
     },
-    [s, saveNow, setS]
+    [s, saveNow, setS, activeYear, activeMonth]
   );
 
   const delTxn = useCallback(
@@ -153,11 +158,15 @@ export default function App() {
 
   const saveEditTxn = useCallback(
     (form) => {
+      const original = (s.transactions || []).find((t) => t.id === form.id);
       const updated = {
         ...form,
+        // Never blank out the date on edit — keep the original if cleared.
+        date: form.date || original?.date || `${activeYear}-${mNum(activeMonth)}-01`,
+        spentOn: (form.spentOn || "").trim() || original?.spentOn || "",
         amount: parseFloat(form.amount) || 0,
         ccId: form.ccId || null,
-        note: form.note || "",
+        note: (form.note || "").trim(),
       };
       const newS = {
         ...s,
@@ -167,7 +176,7 @@ export default function App() {
       setEditTxn(null);
       saveNow(newS);
     },
-    [s, saveNow, setS]
+    [s, saveNow, setS, activeYear, activeMonth]
   );
 
   const annualData = useMemo(

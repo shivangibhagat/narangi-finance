@@ -2,8 +2,9 @@ import { MONTHS } from "../constants/theme";
 
 export const fmt = (n) => {
   const num = Number(n || 0);
-  if (num < 0) return "-\u20b9" + Math.abs(num).toLocaleString("en-IN");
-  return "\u20b9" + num.toLocaleString("en-IN");
+  if (!Number.isFinite(num)) return "₹0";
+  if (num < 0) return "-₹" + Math.abs(num).toLocaleString("en-IN");
+  return "₹" + num.toLocaleString("en-IN");
 };
 // Collision-safe IDs: bulk Excel imports create 100+ txns within the same millisecond,
 // so Date.now() alone is not enough entropy. Prefer crypto.randomUUID when available.

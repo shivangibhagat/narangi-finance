@@ -107,5 +107,13 @@ describe("smoke — App renders and every tab opens without crashing", () => {
     await waitFor(() => {
       expect(screen.getByText(/Quick Add/)).toBeTruthy();
     });
+
+    // Close it, then open the Excel import modal from the Txns tab
+    fireEvent.click(screen.getByText("×"));
+    fireEvent.click(screen.getByRole("button", { name: /Txns/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Import from Excel/ }));
+    await waitFor(() => {
+      expect(screen.getByText(/Drop your Excel file here/)).toBeTruthy();
+    });
   });
 });

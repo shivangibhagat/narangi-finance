@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import { fmtDateCell as fmtDateCellUtil } from "../utils/dateParser";
 import { T } from "../constants/theme";
 import { resolveCcId } from "../utils/finance";
+import { autoDetectMapping, parseImportAmount, normalizeCategory, maybeConvertCCPayment, normalizeSubCatName, txnDedupeKey } from "../utils/importer";
 import { uid } from "../utils/format";
 import { Modal, iSty } from "./ui/primitives";
 
@@ -19,8 +20,9 @@ export function ImportModal({open,onClose,s,onImport}) {
   const [dragOver,setDragOver]=useState(false);
   const [importErr,setImportErr]=useState("");
   const fileRef=useRef();
+  const importingRef=useRef(false);
 
-  const reset=()=>{setStep("upload");setWb(null);setSheetName("");setHeaders([]);setRows([]);setPreview([]);setImportDone(null);setImportErr("");setMapping({date:-1,category:-1,subCat:-1,spentOn:-1,amount:-1,person:-1,note:-1});};
+  const reset=()=>{importingRef.current=false;setImporting(false);setStep("upload");setWb(null);setSheetName("");setHeaders([]);setRows([]);setPreview([]);setImportDone(null);setImportErr("");setMapping({date:-1,category:-1,subCat:-1,spentOn:-1,amount:-1,person:-1,note:-1});};
 
   const parseFile=file=>{
     setImportErr("");
@@ -41,8 +43,8 @@ export function ImportModal({open,onClose,s,onImport}) {
 
   const loadSheet=(workbook,sName)=>{
     const ws=workbook.Sheets[sName];
-    const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
-    if(!data.length) return;
+    const data=ws?XLSX.utils.sheet_to_json(ws,{header:1,defval:""}):[];
+    if(!data.length){ setHeaders([]); setRows([]); setPreview([]); return; }
     const hdrs=(data[0]||[]).map(h=>String(h||"").trim());
     const dataRows=data.slice(1).filter(r=>r.some(c=>c!==null&&c!==""&&c!==undefined));
     setHeaders(hdrs);
@@ -50,20 +52,7 @@ export function ImportModal({open,onClose,s,onImport}) {
     autoDetect(hdrs);
   };
 
-  const autoDetect=hdrs=>{
-    const m={date:-1,category:-1,subCat:-1,spentOn:-1,amount:-1,person:-1,note:-1};
-    hdrs.forEach((h,i)=>{
-      const hl=h.toLowerCase().replace(/[^a-z]/g,"");
-      if(/date/.test(hl) && m.date===-1) m.date=i;
-      else if(/(category|cat)/.test(hl) && !/sub/.test(hl) && m.category===-1) m.category=i;
-      else if(/(subcat|subcategory|sub)/.test(hl) && m.subCat===-1) m.subCat=i;
-      else if(/(descr|spenton|spenton|spent|what|particular|detail|narrat|item|particulars)/.test(hl) && m.spentOn===-1) m.spentOn=i;
-      else if(/(amount|amt|rs|inr|rupee|money|value)/.test(hl) && m.amount===-1) m.amount=i;
-      else if(/(person|who|member|by|paid)/.test(hl) && m.person===-1) m.person=i;
-      else if(/(note|remark|comment|desc)/.test(hl) && m.note===-1) m.note=i;
-    });
-    setMapping(m);
-  };
+  const autoDetect=hdrs=>{ setMapping(autoDetectMapping(hdrs)); };
 
   const fmtDateCell = val => fmtDateCellUtil(val, XLSX.SSF.parse_date_code);
 
@@ -72,47 +61,14 @@ export function ImportModal({open,onClose,s,onImport}) {
     const members=s.members||["NARR","SHIVU"];
     return rows.map((row,ri)=>{
       const dateStr=fmtDateCell(get(row,mapping.date));
-      const rawAmt=get(row,mapping.amount);
-      const amt=parseFloat(String(rawAmt).replace(/[₹,\s]/g,""))||0;
-      const rawCat=String(get(row,mapping.category)||"").trim().toUpperCase();
-      // Normalize category
-      const catNorm=rawCat.replace(/\s+/g," ").trim();
-      const catMap={"INCOME":"INCOME","FIXED":"FIXED EXPENSES","FIXED EXPENSES":"FIXED EXPENSES","VARIABLE":"VARIABLE EXPENSES","VARIABLE EXPENSES":"VARIABLE EXPENSES","SAVING":"SAVINGS","SAVINGS":"SAVINGS","CC":"CC PAYMENT","CC PAYMENT":"CC PAYMENT"};
-      let category=catMap[catNorm]||catMap[catNorm.split(" ")[0]]||"VARIABLE EXPENSES";
+      const amt=parseImportAmount(get(row,mapping.amount));
+      let category=normalizeCategory(get(row,mapping.category));
       // Convert CC bill entries: Excel stores CC payments as VARIABLE EXPENSES / CREDIT CARD BILLS
-      const rawSubCatUpper=String(get(row,mapping.subCat)||"").trim().toUpperCase();
-      if(category==="VARIABLE EXPENSES"&&(rawSubCatUpper.includes("CREDIT CARD")||rawSubCatUpper.includes("CC BILL"))){
-        category="CC PAYMENT";
-      }
-      // Normalize Excel sub-category names to app sub-category names
-      const subCatNormMap = {
-        "VEGETABLES + GROCERY": "VEGETABLES + GROCERY",
-        "WIFI + PHONE BILL": "WIFI + PHONE BILL",
-        "HOUSE RENT": "HOUSE RENT",
-        "SEND TO HOME": "SEND TO HOME",
-        "LIGHTBILL": "LIGHTBILL",
-        "GAS BILL": "GAS BILL",
-        "MONTHLY SIP": "MONTHLY SIP",
-        "MEDICLAIM": "MEDICLAIM",
-        "RENTMOJO ITEMS": "RENTMOJO ITEMS",
-        "CAR AND SCOOTY WASH": "CAR AND SCOOTY WASH",
-        "MISC": "MISC",
-        "ENTERTAINMENT": "ENTERTAINMENT",
-        "CAFES/RESTAURANTS": "CAFES/RESTAURANTS",
-        "SUBSCRIPTIONS": "SUBSCRIPTIONS",
-        "GIFTS": "GIFTS",
-        "ONLINE FOOD": "ONLINE FOOD",
-        "CREDIT CARD BILLS": "CREDIT CARD BILLS",
-        "SHOPPING": "SHOPPING",
-        "BODY CARE": "BODY CARE",
-        "TRANSPORT": "TRANSPORT",
-        "SALARY_NARR": "SALARY_NARR",
-        "SALARY_SHIVU": "SALARY_SHIVU",
-      };
+      const rawSubCatUpper=normalizeSubCatName(get(row,mapping.subCat));
+      category=maybeConvertCCPayment(category,rawSubCatUpper);
       const rawPerson=String(get(row,mapping.person)||"").trim().toUpperCase();
       const person=members.find(m=>m.toUpperCase()===rawPerson)||members[0];
-      // Apply normalization map — fall back to rawSubCatUpper if no mapping found
-      const subCat=subCatNormMap[rawSubCatUpper]||rawSubCatUpper||String(get(row,mapping.subCat)||"").trim();
+      const subCat=rawSubCatUpper;
       const spentOn=String(get(row,mapping.spentOn)||"").trim();
       const ccId=category==="CC PAYMENT"?resolveCcId(subCat,spentOn,s.creditCards||[]):null;
       return {
@@ -134,10 +90,14 @@ export function ImportModal({open,onClose,s,onImport}) {
   const goPreview=()=>{ setPreview(buildPreview()); setStep("preview"); };
 
   const doImport=()=>{
+    if(importingRef.current) return; // double-click / double-tap guard
+    importingRef.current=true;
     setImporting(true);
     // Deduplicate: skip transactions already in s.transactions (match on date+amount+spentOn)
-    const existing=new Set((s.transactions||[]).map(t=>`${t.date}|${t.amount}|${t.spentOn}`));
-    const newTxns=preview.filter(t=>!existing.has(`${t.date}|${t.amount}|${t.spentOn}`));
+    const existing=new Set((s.transactions||[]).map(txnDedupeKey));
+    const newTxns=preview
+      .filter(t=>!existing.has(txnDedupeKey(t)))
+      .map(({_row,...t})=>t); // strip internal row marker before saving
     onImport(newTxns);
     setImportDone({total:preview.length,added:newTxns.length,skipped:preview.length-newTxns.length});
     setImporting(false);
