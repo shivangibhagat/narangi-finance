@@ -12,8 +12,21 @@ import {
   TABS,
 } from "./constants/theme";
 import { DEFAULTS } from "./constants/defaults";
-import { mNum, ccKey, uid, confirmDel } from "./utils/format";
-import { summarize, computeCCBalance, ccPaymentMatchesCard } from "./utils/finance";
+import { fmt, mNum, ccKey, uid } from "./utils/format";
+import { summarize, computeCCBalance, ccPaymentMatchesCard, mergeData } from "./utils/finance";
+import {
+  snapshotState,
+  pushHistory,
+  appendActivity,
+  mergeUndoActivity,
+  makeActivityEntry,
+  actorFromUser,
+  transactionsToCSV,
+  buildBackup,
+  parseBackup,
+  downloadFile,
+  todayStamp,
+} from "./utils/safety";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { useOutsideClick } from "./hooks/useOutsideClick";
 import { useFirestoreSync } from "./hooks/useFirestoreSync";
@@ -25,6 +38,9 @@ import { DashboardTab } from "./components/DashboardTab";
 import { TransactionsTab } from "./components/TransactionsTab";
 import { PlanTab } from "./components/PlanTab";
 import { CreditCardsTab } from "./components/CreditCardsTab";
+import { ConfirmDialog } from "./components/ConfirmDialog";
+import { UndoToast } from "./components/UndoToast";
+import { MoreTab } from "./components/MoreTab";
 
 export default function App() {
   const isMobile = useIsMobile();
@@ -38,7 +54,97 @@ export default function App() {
     });
   }, []);
 
-  const { s, setS, loaded, syncStatus, upd, updNow, saveNow } = useFirestoreSync(user);
+  const { s, setS, loaded, syncStatus, upd, saveNow } = useFirestoreSync(user);
+
+  // ─── Safety pack: confirm dialog, undo history, activity log ──────────────
+  // sRef mirrors the latest state so callbacks always mutate a fresh base
+  // (avoids stale-closure drops and StrictMode double-fired updater effects).
+  const sRef = useRef(s);
+  sRef.current = s;
+  const actor = actorFromUser(user);
+  const entry = useCallback(
+    (action, detail) => makeActivityEntry({ actor, action, detail }),
+    [actor]
+  );
+
+  // Toast (auto-dismisses after 12s)
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
+  const showToast = useCallback((msg, canUndo = false) => {
+    clearTimeout(toastTimer.current);
+    setToast({ id: uid(), msg, canUndo });
+    toastTimer.current = setTimeout(() => setToast(null), 12000);
+  }, []);
+  const dismissToast = useCallback(() => {
+    clearTimeout(toastTimer.current);
+    setToast(null);
+  }, []);
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
+
+  // Undo history (ref — never triggers renders, capped at 10 snapshots)
+  const historyRef = useRef([]);
+  const withUndo = useCallback(
+    (label, applyFn) => {
+      historyRef.current = pushHistory(historyRef.current, {
+        state: snapshotState(sRef.current),
+        ts: Date.now(),
+      });
+      applyFn();
+      showToast(label, true);
+    },
+    [showToast]
+  );
+  const handleUndo = useCallback(() => {
+    const stack = historyRef.current;
+    if (!stack.length) {
+      dismissToast();
+      return;
+    }
+    const last = stack[stack.length - 1];
+    historyRef.current = stack.slice(0, -1);
+    const prev = last.state;
+    const restored = {
+      ...prev,
+      activity: mergeUndoActivity(
+        sRef.current.activity,
+        prev.activity,
+        makeActivityEntry({ actor, action: "undo", detail: "Undid the last change" }),
+        last.ts || 0
+      ),
+    };
+    setS(restored);
+    saveNow(restored);
+    showToast("Change undone", false);
+  }, [actor, setS, saveNow, showToast, dismissToast]);
+
+  // Confirm dialog (in-app replacement for window.confirm, which iOS PWA blocks)
+  const [confirmState, setConfirmState] = useState(null);
+  const requestConfirm = useCallback((opts) => setConfirmState(opts), []);
+  const closeConfirm = useCallback(() => setConfirmState(null), []);
+  const fireConfirm = useCallback(() => {
+    const c = confirmState;
+    setConfirmState(null);
+    c?.onConfirm?.();
+  }, [confirmState]);
+
+  // Drop-in for the sync hook's updNow that also appends an activity entry.
+  // Resolves against sRef (not inside a setS updater) so StrictMode dev
+  // double-invocation can't fire the save twice.
+  const updNowLogged = useCallback(
+    (patch, activity) => {
+      const p = sRef.current;
+      const resolved = typeof patch === "function" ? patch(p) : patch;
+      const newS = { ...p, ...resolved };
+      if (activity)
+        newS.activity = appendActivity(
+          newS.activity,
+          entry(activity.action, activity.detail)
+        );
+      setS(newS);
+      saveNow(newS);
+    },
+    [entry, setS, saveNow]
+  );
 
   const [tab, setTab] = useState("dashboard");
   const [activeYear, setActiveYear] = useState(2026);
@@ -123,6 +229,7 @@ export default function App() {
 
   const addTxn = useCallback(
     (form) => {
+      const p = sRef.current;
       const spentOn = (form.spentOn || "").trim();
       const amt = parseFloat(form.amount);
       if (!spentOn || !(amt > 0)) return;
@@ -138,27 +245,48 @@ export default function App() {
         ccId: form.ccId || null,
         note: (form.note || "").trim(),
       };
-      const newS = { ...s, transactions: [...(s.transactions || []), txn] };
+      const newS = { ...p, transactions: [...(p.transactions || []), txn] };
+      newS.activity = appendActivity(
+        newS.activity,
+        entry("txn_add", `Added "${spentOn}" · ${fmt(amt)}`)
+      );
       setS(newS);
       saveNow(newS);
     },
-    [s, saveNow, setS, activeYear, activeMonth]
+    [saveNow, setS, activeYear, activeMonth, entry]
   );
 
   const delTxn = useCallback(
     (id) => {
-      const t = (s.transactions || []).find((t) => t.id === id);
-      if (!t || !confirmDel(t.spentOn || "this")) return;
-      const newS = { ...s, transactions: (s.transactions || []).filter((t) => t.id !== id) };
-      setS(newS);
-      saveNow(newS);
+      const t = (sRef.current.transactions || []).find((t) => t.id === id);
+      if (!t) return;
+      requestConfirm({
+        title: "Delete transaction?",
+        message: `"${t.spentOn || "this transaction"}" · ${fmt(t.amount)}${t.date ? ` · ${t.date}` : ""}`,
+        confirmLabel: "Delete",
+        onConfirm: () =>
+          withUndo(`Deleted "${t.spentOn || "transaction"}"`, () => {
+            const p = sRef.current;
+            const newS = {
+              ...p,
+              transactions: (p.transactions || []).filter((x) => x.id !== id),
+            };
+            newS.activity = appendActivity(
+              newS.activity,
+              entry("txn_delete", `Deleted "${t.spentOn || "transaction"}" · ${fmt(t.amount)}`)
+            );
+            setS(newS);
+            saveNow(newS);
+          }),
+      });
     },
-    [s, saveNow, setS]
+    [requestConfirm, withUndo, entry, setS, saveNow]
   );
 
   const saveEditTxn = useCallback(
     (form) => {
-      const original = (s.transactions || []).find((t) => t.id === form.id);
+      const p = sRef.current;
+      const original = (p.transactions || []).find((t) => t.id === form.id);
       const updated = {
         ...form,
         // Never blank out the date on edit — keep the original if cleared.
@@ -169,14 +297,73 @@ export default function App() {
         note: (form.note || "").trim(),
       };
       const newS = {
-        ...s,
-        transactions: (s.transactions || []).map((t) => (t.id === form.id ? updated : t)),
+        ...p,
+        transactions: (p.transactions || []).map((t) => (t.id === form.id ? updated : t)),
       };
+      newS.activity = appendActivity(
+        newS.activity,
+        entry("txn_edit", `Edited "${updated.spentOn || "transaction"}" · ${fmt(updated.amount)}`)
+      );
       setS(newS);
       setEditTxn(null);
       saveNow(newS);
     },
-    [s, saveNow, setS, activeYear, activeMonth]
+    [saveNow, setS, activeYear, activeMonth, entry]
+  );
+
+  // ─── Backup / restore ────────────────────────────────────────────────────
+  const handleExportCSV = useCallback(() => {
+    const ok = downloadFile(
+      `narangi-transactions-${todayStamp()}.csv`,
+      transactionsToCSV(sRef.current.transactions),
+      "text/csv"
+    );
+    showToast(ok ? "Transactions exported as CSV" : "Export failed in this browser", false);
+  }, [showToast]);
+
+  const handleExportJSON = useCallback(() => {
+    const ok = downloadFile(
+      `narangi-backup-${todayStamp()}.json`,
+      JSON.stringify(buildBackup(sRef.current, actor), null, 2),
+      "application/json"
+    );
+    showToast(ok ? "Full backup downloaded" : "Export failed in this browser", false);
+  }, [actor, showToast]);
+
+  const handleRestoreFile = useCallback(
+    (file) => {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const parsed = parseBackup(reader.result);
+        if (!parsed.ok) {
+          showToast(`Restore failed: ${parsed.error}`, false);
+          return;
+        }
+        const data = mergeData(parsed.data);
+        requestConfirm({
+          title: "Restore backup?",
+          message: `Replace ALL current shared data with this backup (${parsed.txnCount} transaction${parsed.txnCount === 1 ? "" : "s"}${parsed.exportedAt ? `, exported ${new Date(parsed.exportedAt).toLocaleString("en-IN")}` : ""})? You can undo this right after restoring.`,
+          confirmLabel: "Restore",
+          tone: "accent",
+          onConfirm: () =>
+            withUndo("Backup restored", () => {
+              const newS = {
+                ...data,
+                activity: appendActivity(
+                  data.activity,
+                  entry("restore", `Restored backup (${parsed.txnCount} transactions)`)
+                ),
+              };
+              setS(newS);
+              saveNow(newS);
+            }),
+        });
+      };
+      reader.onerror = () => showToast("Restore failed: could not read file.", false);
+      reader.readAsText(file);
+    },
+    [requestConfirm, withUndo, entry, setS, saveNow, showToast]
   );
 
   const annualData = useMemo(
@@ -523,7 +710,9 @@ export default function App() {
           <PlanTab
             s={s}
             upd={upd}
-            updNow={updNow}
+            updNow={updNowLogged}
+            requestConfirm={requestConfirm}
+            withUndo={withUndo}
             totalIncome={totalIncome}
             totalFixed={totalFixed}
             totalSavings={totalSavings}
@@ -537,7 +726,9 @@ export default function App() {
           <CreditCardsTab
             s={s}
             upd={upd}
-            updNow={updNow}
+            updNow={updNowLogged}
+            requestConfirm={requestConfirm}
+            withUndo={withUndo}
             transactions={s.transactions || []}
             getTxns={getTxns}
             activeMonth={activeMonth}
@@ -545,6 +736,15 @@ export default function App() {
             activeYear={activeYear}
             addTxn={addTxn}
             isMobile={isMobile}
+          />
+        )}
+        {tab === "more" && (
+          <MoreTab
+            s={s}
+            isMobile={isMobile}
+            onExportCSV={handleExportCSV}
+            onExportJSON={handleExportJSON}
+            onRestoreFile={handleRestoreFile}
           />
         )}
       </div>
@@ -599,14 +799,27 @@ export default function App() {
           />
         )}
       </Modal>
+      <ConfirmDialog confirmState={confirmState} onConfirm={fireConfirm} onCancel={closeConfirm} />
+      <UndoToast toast={toast} onUndo={handleUndo} onDismiss={dismissToast} isMobile={isMobile} />
       <ImportModal
         open={showImport}
         onClose={() => setShowImport(false)}
         s={s}
         onImport={(txns) => {
-          const newS = { ...s, transactions: [...(s.transactions || []), ...txns] };
-          setS(newS);
-          saveNow(newS);
+          if (!txns || !txns.length) return;
+          withUndo(
+            `Imported ${txns.length} transaction${txns.length === 1 ? "" : "s"}`,
+            () => {
+              const p = sRef.current;
+              const newS = { ...p, transactions: [...(p.transactions || []), ...txns] };
+              newS.activity = appendActivity(
+                newS.activity,
+                entry("import", `Imported ${txns.length} transactions from Excel`)
+              );
+              setS(newS);
+              saveNow(newS);
+            }
+          );
         }}
       />
 

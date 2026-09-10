@@ -44,4 +44,5 @@ export const TABS = [
   { id: "transactions", icon: "📋", label: "Txns" },
   { id: "plan", icon: "🎯", label: "Plan" },
   { id: "credit cards", icon: "💳", label: "Cards" },
+  { id: "more", icon: "☰", label: "More" },
 ];
