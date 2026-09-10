@@ -47,4 +47,6 @@ export const DEFAULTS = {
   ],
   ccMonthlyCharges: {},
   customTags: ["reimbursable", "birthday", "travel", "emergency", "work"],
+  // Activity log (newest first, capped at 100): { id, ts, actor, action, detail }
+  activity: [],
 };

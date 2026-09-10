@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
 import { T, getVisibleMonths } from "../constants/theme";
 import { DEFAULTS } from "../constants/defaults";
-import { fmt, mNum, ccKey, uid, confirmDel } from "../utils/format";
+import { fmt, mNum, ccKey, uid } from "../utils/format";
 import { computeCCBalance, ccPaymentMatchesCard } from "../utils/finance";
 import { Badge, Btn, Card, TI, Sel, iSty } from "./ui/primitives";
 
-export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMonth, setActiveMonth, activeYear, addTxn, isMobile }) {
+export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMonth, setActiveMonth, activeYear, addTxn, isMobile, requestConfirm, withUndo }) {
   const [showAddCard, setShowAddCard] = useState(false);
   const members = s.members || DEFAULTS.members;
   const [newCard, setNewCard] = useState({ name: "", person: members[0], initialOutstanding: "", limit: "" });
@@ -85,10 +85,20 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
   };
 
   const deleteCreditCard = ccId => {
-    if (!confirmDel((s.creditCards || []).find(c => c.id === ccId)?.name || "this card")) return;
-    const newCharges = Object.fromEntries(Object.entries(s.ccMonthlyCharges || {}).filter(([key]) => !key.startsWith(ccId + "_")));
-    const newTxns = (transactions || []).map(t => t.ccId === ccId ? { ...t, ccId: null } : t);
-    updNow({ creditCards: (s.creditCards || []).filter(c => c.id !== ccId), ccMonthlyCharges: newCharges, transactions: newTxns });
+    const name = (s.creditCards || []).find(c => c.id === ccId)?.name || "this card";
+    requestConfirm({
+      title: "Delete credit card?",
+      message: `"${name}" and its monthly charges will be removed (past payments are kept, unlinked). You can undo this right after.`,
+      confirmLabel: "Delete",
+      onConfirm: () => withUndo(`Deleted card "${name}"`, () => {
+        const newCharges = Object.fromEntries(Object.entries(s.ccMonthlyCharges || {}).filter(([key]) => !key.startsWith(ccId + "_")));
+        const newTxns = (transactions || []).map(t => t.ccId === ccId ? { ...t, ccId: null } : t);
+        updNow(
+          { creditCards: (s.creditCards || []).filter(c => c.id !== ccId), ccMonthlyCharges: newCharges, transactions: newTxns },
+          { action: "card_delete", detail: `Deleted card "${name}"` }
+        );
+      }),
+    });
   };
 
   if ((s.creditCards || []).length === 0 && !showAddCard) return (
@@ -260,7 +270,7 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
                       💡 Starting debt = what you owed when you first started tracking this card
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                      <button onClick={() => { updNow({ creditCards: (s.creditCards || []).map(c => c.id === cc.id ? { ...c, ...editCardVal, name: (editCardVal.name || "").trim() || c.name } : c) }); setEditCardId(null); }} style={{ background: T.accent, border: "none", color: T.bg, borderRadius: 8, padding: "10px", fontWeight: 700, cursor: "pointer" }}>Save</button>
+                      <button onClick={() => { updNow({ creditCards: (s.creditCards || []).map(c => c.id === cc.id ? { ...c, ...editCardVal, name: (editCardVal.name || "").trim() || c.name } : c) }, { action: "card_edit", detail: `Edited card "${(editCardVal.name || "").trim() || cc.name}"` }); setEditCardId(null); }} style={{ background: T.accent, border: "none", color: T.bg, borderRadius: 8, padding: "10px", fontWeight: 700, cursor: "pointer" }}>Save</button>
                       <button onClick={() => setEditCardId(null)} style={{ background: "transparent", border: `1px solid ${T.border}`, color: T.muted, borderRadius: 8, padding: "10px", fontWeight: 700, cursor: "pointer" }}>Cancel</button>
                     </div>
                   </div>
@@ -412,7 +422,7 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
               <button
                 onClick={() => {
                   if (!newCard.name) return;
-                  updNow({ creditCards: [...(s.creditCards || []), { id: uid(), name: newCard.name, person: newCard.person, initialOutstanding: +newCard.initialOutstanding || 0, limit: +newCard.limit || 0 }] });
+                  updNow({ creditCards: [...(s.creditCards || []), { id: uid(), name: newCard.name, person: newCard.person, initialOutstanding: +newCard.initialOutstanding || 0, limit: +newCard.limit || 0 }] }, { action: "card_add", detail: `Added card "${newCard.name}"` });
                   setNewCard({ name: "", person: members[0], initialOutstanding: "", limit: "" });
                   setShowAddCard(false);
                 }}

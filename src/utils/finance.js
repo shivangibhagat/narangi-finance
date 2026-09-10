@@ -74,6 +74,10 @@ export function mergeData(data) {
     ccMonthlyCharges: data.ccMonthlyCharges || {},
     customTags: data.customTags || DEFAULTS.customTags,
     variableSubCats: data.variableSubCats || DEFAULTS.variableSubCats,
+    // Activity log: tolerate missing/corrupt values, drop malformed entries, cap at 100.
+    activity: Array.isArray(data.activity)
+      ? data.activity.filter((e) => e && typeof e === "object").slice(0, 100)
+      : [],
     // Coerce plan amounts to numbers — same string-concat hazard as transactions.
     variableBudget: num(data.variableBudget ?? DEFAULTS.variableBudget),
     savings: (data.savings || DEFAULTS.savings).map((sv) => ({

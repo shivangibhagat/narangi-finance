@@ -54,6 +54,7 @@ describe("smoke — every module imports without errors", () => {
     await expect(import("../utils/finance")).resolves.toBeTruthy();
     await expect(import("../utils/format")).resolves.toBeTruthy();
     await expect(import("../utils/dateParser")).resolves.toBeTruthy();
+    await expect(import("../utils/safety")).resolves.toBeTruthy();
     await expect(import("../constants/theme")).resolves.toBeTruthy();
     await expect(import("../constants/defaults")).resolves.toBeTruthy();
   });
@@ -67,6 +68,9 @@ describe("smoke — every module imports without errors", () => {
     await expect(import("../components/TransactionsTab")).resolves.toBeTruthy();
     await expect(import("../components/PlanTab")).resolves.toBeTruthy();
     await expect(import("../components/CreditCardsTab")).resolves.toBeTruthy();
+    await expect(import("../components/ConfirmDialog")).resolves.toBeTruthy();
+    await expect(import("../components/UndoToast")).resolves.toBeTruthy();
+    await expect(import("../components/MoreTab")).resolves.toBeTruthy();
     await expect(import("../components/OpeningBalanceCard")).resolves.toBeTruthy();
     await expect(import("../App")).resolves.toBeTruthy();
   });
@@ -114,6 +118,13 @@ describe("smoke — App renders and every tab opens without crashing", () => {
     fireEvent.click(screen.getByRole("button", { name: /Import from Excel/ }));
     await waitFor(() => {
       expect(screen.getByText(/Drop your Excel file here/)).toBeTruthy();
+    });
+
+    // More tab opens: backup actions + activity log
+    fireEvent.click(screen.getByRole("button", { name: /More/ }));
+    await waitFor(() => {
+      expect(screen.getByText(/Data & Backup/)).toBeTruthy();
+      expect(screen.getByText(/Recent Activity/)).toBeTruthy();
     });
   });
 });
