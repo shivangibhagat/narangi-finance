@@ -25,7 +25,7 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
     const closingBalance = Math.max(0, openingBalance + newCharges - monthPayments);
     const totalPaid = transactions.filter(t => ccPaymentMatchesCard(t, cc)).reduce((a, t) => a + t.amount, 0);
     const totalCharges = Object.entries(s.ccMonthlyCharges || {}).filter(([k]) => k.startsWith(cc.id + "_")).reduce((a, [, v]) => a + v, 0);
-    const recentPmts = transactions.filter(t => ccPaymentMatchesCard(t, cc)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+    const recentPmts = transactions.filter(t => ccPaymentMatchesCard(t, cc)).sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 5);
 
     // Available credit = limit minus what you currently owe (current balance)
     const availableCredit = (cc.limit || 0) > 0 ? Math.max(0, cc.limit - closingBalance) : null;
@@ -48,13 +48,13 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
     return members.map((member, i) => {
       const memberCards = ccStats.filter(cc => cc.person === member);
       const memberIncome = transactions
-        .filter(t => t.person === member && t.category === "INCOME" && t.date.startsWith(`${activeYear}-${mNum(activeMonth)}`))
+        .filter(t => t.person === member && t.category === "INCOME" && t.date?.startsWith(`${activeYear}-${mNum(activeMonth)}`))
         .reduce((a, t) => a + t.amount, 0);
       const memberCashSpend = transactions
-        .filter(t => t.person === member && (t.category === "FIXED EXPENSES" || t.category === "VARIABLE EXPENSES") && t.date.startsWith(`${activeYear}-${mNum(activeMonth)}`))
+        .filter(t => t.person === member && (t.category === "FIXED EXPENSES" || t.category === "VARIABLE EXPENSES") && t.date?.startsWith(`${activeYear}-${mNum(activeMonth)}`))
         .reduce((a, t) => a + t.amount, 0);
       const memberCCPaid = transactions
-        .filter(t => t.person === member && t.category === "CC PAYMENT" && t.date.startsWith(`${activeYear}-${mNum(activeMonth)}`))
+        .filter(t => t.person === member && t.category === "CC PAYMENT" && t.date?.startsWith(`${activeYear}-${mNum(activeMonth)}`))
         .reduce((a, t) => a + t.amount, 0);
       const memberCCOwed = memberCards.reduce((a, cc) => a + cc.currentBalance, 0);
 
@@ -221,7 +221,7 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
       {/* ── Month picker ── */}
       <div style={{ display: "flex", gap: 5, overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 2 }}>
         {getVisibleMonths(activeYear).map(m => {
-          const has = transactions.filter(t => t.category === "CC PAYMENT" && t.date.startsWith(`${activeYear}-${mNum(m)}`)).length > 0;
+          const has = transactions.filter(t => t.category === "CC PAYMENT" && t.date?.startsWith(`${activeYear}-${mNum(m)}`)).length > 0;
           return (
             <button key={m} onClick={() => setActiveMonth(m)} style={{
               background: activeMonth === m ? T.rose : "transparent",
@@ -387,7 +387,7 @@ export function CreditCardsTab({ s, upd, updNow, transactions, getTxns, activeMo
                 <div style={{ fontSize: 11, color: T.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Recent Payments</div>
                 {cc.recentPmts.map(t => (
                   <div key={t.id} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: `1px solid ${T.border}22` }}>
-                    <span style={{ fontSize: 12, color: T.muted }}>{t.date} — {t.note || "Payment"}</span>
+                    <span style={{ fontSize: 12, color: T.muted }}>{t.date || "—"} — {t.note || "Payment"}</span>
                     <span style={{ fontSize: 12, fontWeight: 700, color: clr }}>{fmt(t.amount)}</span>
                   </div>
                 ))}

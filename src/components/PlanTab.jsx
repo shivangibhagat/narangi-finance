@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { T, PIE_COLORS } from "../constants/theme";
+import { DEFAULTS } from "../constants/defaults";
 import { fmt, mNum, uid, confirmDel } from "../utils/format";
 import { ActualBar, Card, Lbl, iSty } from "./ui/primitives";
 
@@ -15,7 +16,7 @@ export function PlanTab({s,upd,updNow,totalIncome,totalFixed,totalSavings,transa
   const planBalance=totalIncome-totalFixed-s.variableBudget-totalSavings;
   const iSt={...iSty,fontSize:13,padding:"8px 10px"};
 
-  const monthTxns=useMemo(()=>transactions.filter(t=>t.date.startsWith(`${activeYear}-${mNum(activeMonth)}`)),[transactions,activeMonth,activeYear]);
+  const monthTxns=useMemo(()=>transactions.filter(t=>t.date?.startsWith(`${activeYear}-${mNum(activeMonth)}`)),[transactions,activeMonth,activeYear]);
   const members = s.members || DEFAULTS.members;
 
   // Income: match by person — "NARR Salary" item → all INCOME txns where person===NARR.

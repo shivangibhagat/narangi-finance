@@ -12,7 +12,7 @@ import {
   TABS,
 } from "./constants/theme";
 import { DEFAULTS } from "./constants/defaults";
-import { mNum, monthKey, ccKey, uid, confirmDel } from "./utils/format";
+import { mNum, ccKey, uid, confirmDel } from "./utils/format";
 import { summarize, computeCCBalance, ccPaymentMatchesCard } from "./utils/finance";
 import { useIsMobile } from "./hooks/useIsMobile";
 import { useOutsideClick } from "./hooks/useOutsideClick";
@@ -73,7 +73,7 @@ export default function App() {
   const getTxns = useCallback(
     (m, y) => {
       const yr = y ?? activeYear;
-      return (s.transactions || []).filter((t) => t.date.startsWith(`${yr}-${mNum(m)}`));
+      return (s.transactions || []).filter((t) => t.date?.startsWith(`${yr}-${mNum(m)}`));
     },
     [s.transactions, activeYear]
   );
@@ -571,6 +571,8 @@ export default function App() {
           value={quickForm}
           onChange={setQuickForm}
           onSubmit={() => {
+            // Guard: don't close/clear when the form is invalid (addTxn ignores it)
+            if (!quickForm.spentOn?.trim() || !(parseFloat(quickForm.amount) > 0)) return;
             addTxn(quickForm);
             setQuickForm((f) => ({ ...f, spentOn: "", amount: "", note: "", tags: [] }));
             setShowQuickAdd(false);

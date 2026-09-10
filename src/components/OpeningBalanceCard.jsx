@@ -20,7 +20,7 @@ export function OpeningBalanceCard({state,upd,activeYear,activeMonth}) {
   const prevKey=monthKey(prevY,prevM);
   const prevBal=state.openingBalances?.[prevKey]||{};
   const prevOb=members.reduce((a,m)=>a+(prevBal[m]||0),0);
-  const prevTxns=(state.transactions||[]).filter(t=>t.date.startsWith(`${prevY}-${mNum(prevM)}`));
+  const prevTxns=(state.transactions||[]).filter(t=>t.date?.startsWith(`${prevY}-${mNum(prevM)}`));
   const prevIn=prevTxns.filter(t=>t.category==="INCOME").reduce((a,t)=>a+t.amount,0);
   const prevOut=sumOutflows(prevTxns);
   const prevClosing=prevOb+prevIn-prevOut;

@@ -35,7 +35,7 @@ export function computeCCBalance(cc, upToYear, upToMonth, transactions, ccMonthl
         .filter(
           (t) =>
             ccPaymentMatchesCard(t, cc) &&
-            t.date.startsWith(`${y}-${mNum(m)}`)
+            t.date?.startsWith(`${y}-${mNum(m)}`)
         )
         .reduce((a, t) => a + t.amount, 0);
     }
@@ -46,14 +46,19 @@ export function computeCCBalance(cc, upToYear, upToMonth, transactions, ccMonthl
 export function mergeData(data) {
   const creditCards = (data.creditCards || DEFAULTS.creditCards).map((cc) => ({
     ...cc,
-    initialOutstanding: cc.initialOutstanding ?? cc.outstanding ?? 0,
+    // Migrate legacy field names so old Firestore docs don't lose their debt figures:
+    // older app versions persisted `balance` (and very old ones `outstanding`).
+    initialOutstanding: cc.initialOutstanding ?? cc.balance ?? cc.outstanding ?? 0,
   }));
   const transactions = (Array.isArray(data.transactions) ? data.transactions : []).map((t) => {
-    if (t.category === "CC PAYMENT" && !t.ccId) {
-      const ccId = resolveCcId(t.subCat, t.spentOn, creditCards);
-      return ccId ? { ...t, ccId } : t;
+    // Coerce amount to a number — legacy Firestore docs may store strings,
+    // which would corrupt every sum via string concatenation ("1000" + 500).
+    const txn = { ...t, amount: Number(t.amount) || 0 };
+    if (txn.category === "CC PAYMENT" && !txn.ccId) {
+      const ccId = resolveCcId(txn.subCat, txn.spentOn, creditCards);
+      if (ccId) txn.ccId = ccId;
     }
-    return t;
+    return txn;
   });
   return {
     ...DEFAULTS,

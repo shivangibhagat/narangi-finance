@@ -38,7 +38,7 @@ export function TransactionsTab({ s, addTxn, delTxn, editTxn, setEditTxn, saveEd
       if (!hay.includes(q)) return false;
     }
     return true;
-  }).sort((a, b) => b.date.localeCompare(a.date)), [monthTxns, filter, personFilter, search]);
+  }).sort((a, b) => (b.date || "").localeCompare(a.date || "")), [monthTxns, filter, personFilter, search]);
 
   // Group by date for mobile view
   const groupedByDate = useMemo(() => {
@@ -51,6 +51,8 @@ export function TransactionsTab({ s, addTxn, delTxn, editTxn, setEditTxn, saveEd
   }, [filtered]);
 
   const handleAdd = () => {
+    // Guard: addTxn silently ignores invalid forms — don't toast/clear in that case
+    if (!form.spentOn?.trim() || !(parseFloat(form.amount) > 0)) return;
     addTxn(form);
     setAddedToast(form.spentOn || "Transaction");
     setForm(f => ({ ...f, spentOn: "", amount: "", note: "", tags: [] }));
