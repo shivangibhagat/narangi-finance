@@ -17,9 +17,10 @@ const ACTION_ICON = {
   card_add: "💳",
   card_edit: "✏️",
   card_delete: "🗑",
+  clear: "🧹",
 };
 
-export function MoreTab({ s, isMobile, onExportCSV, onExportJSON, onRestoreFile }) {
+export function MoreTab({ s, isMobile, onExportCSV, onExportJSON, onRestoreFile, onClearAll }) {
   const fileRef = useRef(null);
   const activity = s.activity || [];
   const txnCount = (s.transactions || []).length;
@@ -67,6 +68,20 @@ export function MoreTab({ s, isMobile, onExportCSV, onExportJSON, onRestoreFile 
             ♻️ Restore from Backup…
           </Btn>
         </div>
+      </Card>
+
+      <Card>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
+          🧹 Fresh Start
+        </div>
+        <div style={{ fontSize: 12, color: T.muted, marginBottom: 10, lineHeight: 1.5 }}>
+          Removes <b style={{ color: T.text }}>everything entered so far</b> — transactions,
+          plan changes, credit cards and the activity log — and resets the app to its
+          starter template. You can undo right after, and a backup above is a good idea first.
+        </div>
+        <Btn variant="outline" color={T.rose} onClick={onClearAll} full>
+          🗑 Clear All Data…
+        </Btn>
       </Card>
 
       <Card>
