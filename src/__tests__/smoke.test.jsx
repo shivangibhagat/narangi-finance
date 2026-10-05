@@ -120,10 +120,11 @@ describe("smoke — App renders and every tab opens without crashing", () => {
       expect(screen.getByText(/Drop your Excel file here/)).toBeTruthy();
     });
 
-    // More tab opens: backup actions + activity log
+    // More tab opens: backup actions + clear-all + activity log
     fireEvent.click(screen.getByRole("button", { name: /More/ }));
     await waitFor(() => {
       expect(screen.getByText(/Data & Backup/)).toBeTruthy();
+      expect(screen.getByText(/Fresh Start/)).toBeTruthy();
       expect(screen.getByText(/Recent Activity/)).toBeTruthy();
     });
   });

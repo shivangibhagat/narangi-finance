@@ -42,6 +42,19 @@ import { ConfirmDialog } from "./components/ConfirmDialog";
 import { UndoToast } from "./components/UndoToast";
 import { MoreTab } from "./components/MoreTab";
 
+// Open on the current month/year by default (was hard-coded to May 2026).
+// Falls back to the nearest trackable month/year when the clock is outside
+// the app's range (YEARS / START_* boundaries).
+const bootDate = (() => {
+  const now = new Date();
+  const year = YEARS.includes(now.getFullYear()) ? now.getFullYear() : YEARS[0];
+  const visible = getVisibleMonths(year);
+  const month = visible.includes(MONTHS[now.getMonth()])
+    ? MONTHS[now.getMonth()]
+    : visible[0];
+  return { year, month };
+})();
+
 export default function App() {
   const isMobile = useIsMobile();
   const [user, setUser] = useState(null);
@@ -147,8 +160,8 @@ export default function App() {
   );
 
   const [tab, setTab] = useState("dashboard");
-  const [activeYear, setActiveYear] = useState(2026);
-  const [activeMonth, setActiveMonth] = useState("May");
+  const [activeYear, setActiveYear] = useState(bootDate.year);
+  const [activeMonth, setActiveMonth] = useState(bootDate.month);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [showYearPicker, setShowYearPicker] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -365,6 +378,30 @@ export default function App() {
     },
     [requestConfirm, withUndo, entry, setS, saveNow, showToast]
   );
+
+  // ─── Fresh start: wipe everything entered so far back to the starter template
+  const handleClearAll = useCallback(() => {
+    requestConfirm({
+      title: "Clear all data?",
+      message:
+        "This removes ALL transactions, plan changes, credit cards and the activity log for BOTH family members, and resets the app to its starter template. You can undo this right after.",
+      confirmLabel: "Clear everything",
+      onConfirm: () =>
+        withUndo("All data cleared", () => {
+          const template = snapshotState(DEFAULTS);
+          const newS = {
+            ...template,
+            transactions: [],
+            activity: appendActivity(
+              [],
+              entry("clear", "Cleared all data and reset to the starter template")
+            ),
+          };
+          setS(newS);
+          saveNow(newS);
+        }),
+    });
+  }, [requestConfirm, withUndo, entry, setS, saveNow]);
 
   const annualData = useMemo(
     () =>
@@ -745,6 +782,7 @@ export default function App() {
             onExportCSV={handleExportCSV}
             onExportJSON={handleExportJSON}
             onRestoreFile={handleRestoreFile}
+            onClearAll={handleClearAll}
           />
         )}
       </div>
